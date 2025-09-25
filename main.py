@@ -8,6 +8,7 @@ import json
 import time
 import os
 import logging
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -28,6 +29,33 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+class TimingLogger:
+    """Utility class for tracking execution times"""
+    def __init__(self):
+        self.start_time = None
+        self.step_times = {}
+        
+    def start_timer(self, step_name="process"):
+        self.start_time = datetime.now()
+        logger.info(f"⏱️  Starting {step_name} at {self.start_time.strftime('%H:%M:%S')}")
+        
+    def log_step(self, step_name):
+        if self.start_time:
+            current_time = datetime.now()
+            elapsed = current_time - self.start_time
+            self.step_times[step_name] = elapsed
+            logger.info(f"✅ {step_name} completed in {elapsed.total_seconds():.2f} seconds")
+            return elapsed
+        return None
+    
+    def finish_timer(self, process_name="process"):
+        if self.start_time:
+            total_time = datetime.now() - self.start_time
+            logger.info(f"🏁 Total {process_name} time: {total_time.total_seconds():.2f} seconds")
+            logger.info(f"📊 Process finished at {datetime.now().strftime('%H:%M:%S')}")
+            return total_time
+        return None
 
 class ServiceM8APIExtractor:
     def __init__(self, max_retries=3):
@@ -60,7 +88,31 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
-                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+                
+                # Enhanced stealth settings for GitHub Actions
+                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                options.add_argument("--disable-web-security")
+                options.add_argument("--allow-running-insecure-content")
+                options.add_argument("--disable-features=VizDisplayCompositor")
+                options.add_argument("--disable-logging")
+                options.add_argument("--disable-background-timer-throttling")
+                options.add_argument("--disable-backgrounding-occluded-windows")
+                options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-field-trial-config")
+                options.add_argument("--disable-ipc-flooding-protection")
+                
+                # Set additional preferences to avoid detection
+                prefs = {
+                    "profile.default_content_setting_values": {
+                        "notifications": 2,
+                        "geolocation": 2,
+                        "media_stream": 2,
+                    },
+                    "profile.managed_default_content_settings": {
+                        "images": 2
+                    }
+                }
+                options.add_experimental_option("prefs", prefs)
                 
                 # Additional stability options
                 options.add_argument("--disable-extensions")
@@ -73,7 +125,20 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-renderer-backgrounding")
                 
                 self.driver = webdriver.Chrome(options=options)
-                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                # Enhanced stealth JavaScript for GitHub Actions
+                stealth_js = """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
+                window.chrome = {runtime: {}};
+                Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 1});
+                Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+                Object.defineProperty(navigator, 'productSub', {get: () => '20030107'});
+                Object.defineProperty(navigator, 'vendorSub', {get: () => ''});
+                """
+                self.driver.execute_script(stealth_js)
                 
                 # Test if browser is working
                 self.driver.get("about:blank")
@@ -181,15 +246,33 @@ class ServiceM8APIExtractor:
                 wait = WebDriverWait(self.driver, 15)
                 wait.until(EC.presence_of_element_located((By.ID, "user_email")))
                 
+                # Human-like typing delays
                 email_field = self.driver.find_element(By.ID, "user_email")
                 email_field.clear()
-                email_field.send_keys(self.email)
+                time.sleep(1)  # Wait after clearing
+                
+                # Type email slowly like a human
+                for char in self.email:
+                    email_field.send_keys(char)
+                    time.sleep(0.1)  # Small delay between keystrokes
+                
+                time.sleep(2)  # Pause between fields
                 
                 password_field = self.driver.find_element(By.ID, "user_password")
                 password_field.clear()
-                password_field.send_keys(self.password)
+                time.sleep(1)
+                
+                # Type password slowly like a human
+                for char in self.password:
+                    password_field.send_keys(char)
+                    time.sleep(0.1)
+                
+                time.sleep(2)  # Pause before clicking submit
                 
                 submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                # Move to button first (human-like behavior)
+                self.driver.execute_script("arguments[0].scrollIntoView();", submit_button)
+                time.sleep(1)
                 submit_button.click()
                 
                 time.sleep(5)
@@ -228,22 +311,44 @@ class ServiceM8APIExtractor:
         return False
     
     def navigate_to_dispatch(self):
-        """Navigate to Dispatch Board with retry mechanism"""
-        for attempt in range(self.max_retries):
+        """Navigate to Dispatch Board with enhanced retry mechanism and longer timeouts"""
+        # Increase retries specifically for navigation issues
+        navigation_retries = 5
+        for attempt in range(navigation_retries):
             try:
-                logger.info(f"Navigation to Dispatch Board attempt {attempt + 1}/{self.max_retries}")
-                wait = WebDriverWait(self.driver, 10)
+                logger.info(f"Navigation to Dispatch Board attempt {attempt + 1}/{navigation_retries}")
+                # Increased timeout from 10 to 30 seconds for navigation
+                wait = WebDriverWait(self.driver, 30)
                 
-                # Wait for navigation menu to be present
+                # Set page load timeout to 60 seconds
+                self.driver.set_page_load_timeout(60)
+                
+                # Wait for navigation menu to be present with longer timeout
                 nav_menu = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "ThemeMainMenu")))
+                logger.info("Navigation menu found")
                 
-                # Wait for dispatch link to be clickable
+                # Wait for dispatch link to be clickable with extended timeout
                 dispatch_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'job_dispatch')]")))
-                dispatch_link.click()
+                logger.info("Dispatch link found and clickable")
                 
-                # Wait for page to load
+                # Scroll to the element before clicking
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", dispatch_link)
+                time.sleep(2)
+                
+                # Click the dispatch link
+                dispatch_link.click()
+                logger.info("Dispatch link clicked")
+                
+                # Wait for page to load with extended timeout
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(10)
+                
+                # Wait longer for page to fully load and render
+                time.sleep(15)
+                
+                # Additional check: wait for page to be in ready state
+                WebDriverWait(self.driver, 30).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
                 
                 # Verify we're on the dispatch page
                 current_url = self.driver.current_url
@@ -252,32 +357,39 @@ class ServiceM8APIExtractor:
                     return True
                 else:
                     logger.warning(f"Navigation may have failed - URL doesn't contain dispatch: {current_url}")
-                    if attempt < self.max_retries - 1:
-                        logger.info("Waiting 5 seconds before retry...")
-                        time.sleep(5)
+                    if attempt < navigation_retries - 1:
+                        logger.info("Waiting 10 seconds before retry...")
+                        time.sleep(10)
                     else:
                         logger.warning("Navigation completed but URL verification failed")
                         return True  # Still return True as we may have reached the page
                 
             except TimeoutException as e:
                 logger.error(f"Navigation timeout on attempt {attempt + 1}: {e}")
-                if attempt < self.max_retries - 1:
-                    logger.info("Waiting 5 seconds before retry...")
-                    time.sleep(5)
+                if attempt < navigation_retries - 1:
+                    logger.info("Waiting 10 seconds before retry...")
+                    time.sleep(10)
+                    # Try to refresh the current page before retry
+                    try:
+                        self.driver.refresh()
+                        time.sleep(5)
+                        logger.info("Page refreshed before retry")
+                    except Exception as refresh_error:
+                        logger.warning(f"Failed to refresh page: {refresh_error}")
                 else:
                     return False
             except NoSuchElementException as e:
                 logger.error(f"Navigation element not found on attempt {attempt + 1}: {e}")
-                if attempt < self.max_retries - 1:
-                    logger.info("Waiting 5 seconds before retry...")
-                    time.sleep(5)
+                if attempt < navigation_retries - 1:
+                    logger.info("Waiting 10 seconds before retry...")
+                    time.sleep(10)
                 else:
                     return False
             except Exception as e:
                 logger.error(f"Navigation error on attempt {attempt + 1}: {e}")
-                if attempt < self.max_retries - 1:
-                    logger.info("Waiting 5 seconds before retry...")
-                    time.sleep(5)
+                if attempt < navigation_retries - 1:
+                    logger.info("Waiting 10 seconds before retry...")
+                    time.sleep(10)
                 else:
                     return False
         
@@ -501,45 +613,82 @@ class ServiceM8APIExtractor:
                     logger.warning(f"Error closing browser: {e}")
 
 def main():
-    """Main function with comprehensive error handling"""
+    """Main function with comprehensive error handling and timing"""
+    timer = TimingLogger()
+    timer.start_timer("ServiceM8 API Token Extraction")
+    
     try:
-        logger.info("Starting ServiceM8 API Token Extractor...")
+        logger.info("🚀 Starting ServiceM8 API Token Extractor...")
+        logger.info(f"📅 Execution started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Check environment variables
         email = os.getenv("EMAIL")
         password = os.getenv("PASSWORD")
         
         if not email or not password:
-            logger.error("EMAIL and PASSWORD environment variables not found!")
+            logger.error("❌ EMAIL and PASSWORD environment variables not found!")
             logger.error("Please create a .env file with your ServiceM8 credentials")
             return
         
-        logger.info("Environment variables loaded successfully")
+        logger.info("✅ Environment variables loaded successfully")
+        timer.log_step("Environment setup")
         
-        # Run extraction
-        extractor = ServiceM8APIExtractor(max_retries=3)
+        # Run extraction with increased retries for better resilience
+        extractor = ServiceM8APIExtractor(max_retries=5)
+        extraction_start = datetime.now()
         result = extractor.extract()
+        timer.log_step("ServiceM8 extraction")
 
-        # Store result in json file
+        # Store result in json file with enhanced validation
         try:
-            with open("result.json", "w") as f:
-                json.dump(result, f, indent=3)
-            logger.info("Results saved to result.json")
+            save_start = datetime.now()
+            
+            # Validate result before saving
+            if result is None:
+                logger.error("❌ Cannot save result - extraction returned None")
+                with open("result.json", "w") as f:
+                    json.dump([], f, indent=3)  # Save empty array instead of null
+                logger.warning("⚠️  Saved empty array to result.json to prevent webhook errors")
+            elif not result:
+                logger.warning("⚠️  Extraction returned empty result")
+                with open("result.json", "w") as f:
+                    json.dump([], f, indent=3)  # Save empty array
+                logger.info("📄 Saved empty array to result.json")
+            else:
+                with open("result.json", "w") as f:
+                    json.dump(result, f, indent=3)
+                logger.info(f"✅ Results saved to result.json in {(datetime.now() - save_start).total_seconds():.2f} seconds")
+            
+            timer.log_step("File save")
         except Exception as e:
-            logger.error(f"Failed to save results to file: {e}")
+            logger.error(f"❌ Failed to save results to file: {e}")
+            # Create a fallback empty file to prevent webhook errors
+            try:
+                with open("result.json", "w") as f:
+                    json.dump([], f, indent=3)
+                logger.warning("⚠️  Created fallback empty result.json file")
+            except Exception as fallback_error:
+                logger.error(f"❌ Failed to create fallback result.json: {fallback_error}")
         
         if result:
-            logger.info("Extraction completed successfully!")
-            logger.info(f"Found {len(result)} API endpoints")
-            # Uncomment the next line if you want to print results to console
-            # print(json.dumps(result, indent=2))
+            logger.info("🎉 Extraction completed successfully!")
+            logger.info(f"📊 Found {len(result)} API endpoints")
+            logger.info(f"🔗 Endpoints extracted: {[item.get('url', 'Unknown')[:50] + '...' for item in result]}")
         else:
-            logger.error("Extraction failed - no data retrieved")
+            logger.error("❌ Extraction failed - no data retrieved")
+            logger.error("🔍 Possible causes:")
+            logger.error("   - Navigation to Dispatch Board failed")
+            logger.error("   - Page did not load completely")
+            logger.error("   - API tokens not found in page source")
+            logger.error("   - ServiceM8 UI has changed")
+            logger.error("📄 Empty result.json created to prevent downstream errors")
             
     except Exception as e:
-        logger.error(f"Critical error in main function: {e}")
+        logger.error(f"💥 Critical error in main function: {e}")
     finally:
-        logger.info("ServiceM8 API Token Extractor finished")
+        timer.finish_timer("ServiceM8 API Token Extraction")
+        logger.info("🏁 ServiceM8 API Token Extractor finished")
+        logger.info("=" * 80)
 
 if __name__ == "__main__":
     main()
