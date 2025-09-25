@@ -1,10 +1,10 @@
 name: ServiceM8 API Token Extractor
 
 on:
-  schedule:
-    # Run every 5 minutes
-    - cron: '*/5 * * * *'
-  workflow_dispatch: # Allow manual trigger
+  # schedule:
+    # Run every 15 minutes (change the number to adjust frequency)
+    # - cron: '*/15 * * * *'
+  workflow_dispatch: # Allow manual trigger only
 
 jobs:
   extract-and-send:
