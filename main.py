@@ -311,85 +311,175 @@ class ServiceM8APIExtractor:
         return False
     
     def navigate_to_dispatch(self):
-        """Navigate to Dispatch Board with enhanced retry mechanism and longer timeouts"""
-        # Increase retries specifically for navigation issues
+        """Navigate to Dispatch Board with multiple fallback strategies"""
         navigation_retries = 5
         for attempt in range(navigation_retries):
             try:
                 logger.info(f"Navigation to Dispatch Board attempt {attempt + 1}/{navigation_retries}")
-                # Increased timeout from 10 to 30 seconds for navigation
-                wait = WebDriverWait(self.driver, 30)
+                wait = WebDriverWait(self.driver, 45)  # Increased to 45 seconds
                 
-                # Set page load timeout to 60 seconds
-                self.driver.set_page_load_timeout(60)
+                # Set page load timeout to 90 seconds
+                self.driver.set_page_load_timeout(90)
                 
-                # Wait for navigation menu to be present with longer timeout
-                nav_menu = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "ThemeMainMenu")))
-                logger.info("Navigation menu found")
-                
-                # Wait for dispatch link to be clickable with extended timeout
-                dispatch_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'job_dispatch')]")))
-                logger.info("Dispatch link found and clickable")
-                
-                # Scroll to the element before clicking
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", dispatch_link)
-                time.sleep(2)
-                
-                # Click the dispatch link
-                dispatch_link.click()
-                logger.info("Dispatch link clicked")
-                
-                # Wait for page to load with extended timeout
-                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                
-                # Wait longer for page to fully load and render
-                time.sleep(15)
-                
-                # Additional check: wait for page to be in ready state
-                WebDriverWait(self.driver, 30).until(
-                    lambda driver: driver.execute_script("return document.readyState") == "complete"
-                )
-                
-                # Verify we're on the dispatch page
+                # Strategy 1: Try direct URL navigation first (most reliable)
+                logger.info("Trying direct URL navigation to dispatch board...")
                 current_url = self.driver.current_url
-                if "job_dispatch" in current_url or "dispatch" in current_url.lower():
-                    logger.info("Successfully navigated to Dispatch Board")
-                    return True
-                else:
-                    logger.warning(f"Navigation may have failed - URL doesn't contain dispatch: {current_url}")
-                    if attempt < navigation_retries - 1:
-                        logger.info("Waiting 10 seconds before retry...")
-                        time.sleep(10)
-                    else:
-                        logger.warning("Navigation completed but URL verification failed")
-                        return True  # Still return True as we may have reached the page
+                base_url = current_url.split('/')[0] + '//' + current_url.split('/')[2]
+                dispatch_url = f"{base_url}/job_dispatch"
                 
-            except TimeoutException as e:
-                logger.error(f"Navigation timeout on attempt {attempt + 1}: {e}")
-                if attempt < navigation_retries - 1:
-                    logger.info("Waiting 10 seconds before retry...")
+                try:
+                    self.driver.get(dispatch_url)
+                    logger.info("Direct URL navigation attempted")
+                    
+                    # Wait for page to load
+                    wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                     time.sleep(10)
-                    # Try to refresh the current page before retry
+                    
+                    # Check if we're on dispatch page
+                    if "job_dispatch" in self.driver.current_url or "dispatch" in self.driver.current_url.lower():
+                        logger.info("✅ Successfully navigated to Dispatch Board via direct URL")
+                        return True
+                        
+                except Exception as direct_error:
+                    logger.warning(f"Direct URL navigation failed: {direct_error}")
+                
+                # Strategy 2: Look for navigation menu and dispatch link
+                logger.info("Trying navigation menu approach...")
+                
+                # Wait for page to be fully loaded first
+                wait.until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+                time.sleep(5)
+                
+                # Multiple selectors to try for the navigation menu
+                nav_selectors = [
+                    (By.CLASS_NAME, "ThemeMainMenu"),
+                    (By.CSS_SELECTOR, ".main-menu"),
+                    (By.CSS_SELECTOR, "[class*='menu']"),
+                    (By.CSS_SELECTOR, "nav"),
+                    (By.TAG_NAME, "nav")
+                ]
+                
+                nav_menu = None
+                for selector_type, selector_value in nav_selectors:
+                    try:
+                        nav_menu = wait.until(EC.presence_of_element_located((selector_type, selector_value)))
+                        logger.info(f"Navigation menu found using {selector_type}: {selector_value}")
+                        break
+                    except TimeoutException:
+                        logger.debug(f"Navigation menu not found with {selector_type}: {selector_value}")
+                        continue
+                
+                if not nav_menu:
+                    logger.warning("No navigation menu found, trying alternative approach...")
+                
+                # Multiple selectors for dispatch link
+                dispatch_selectors = [
+                    (By.XPATH, "//a[contains(@href, 'job_dispatch')]"),
+                    (By.XPATH, "//a[contains(@href, 'dispatch')]"),
+                    (By.XPATH, "//a[contains(text(), 'Dispatch')]"),
+                    (By.XPATH, "//a[contains(text(), 'dispatch')]"),
+                    (By.CSS_SELECTOR, "a[href*='job_dispatch']"),
+                    (By.CSS_SELECTOR, "a[href*='dispatch']"),
+                    (By.XPATH, "//span[contains(text(), 'Dispatch')]/parent::a"),
+                    (By.XPATH, "//div[contains(text(), 'Dispatch')]/parent::a")
+                ]
+                
+                dispatch_link = None
+                for selector_type, selector_value in dispatch_selectors:
+                    try:
+                        dispatch_link = wait.until(EC.element_to_be_clickable((selector_type, selector_value)))
+                        logger.info(f"Dispatch link found using {selector_type}: {selector_value}")
+                        break
+                    except TimeoutException:
+                        logger.debug(f"Dispatch link not found with {selector_type}: {selector_value}")
+                        continue
+                
+                if dispatch_link:
+                    # Scroll to the element and click
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", dispatch_link)
+                    time.sleep(3)
+                    
+                    # Try JavaScript click if regular click fails
+                    try:
+                        dispatch_link.click()
+                        logger.info("Dispatch link clicked successfully")
+                    except Exception as click_error:
+                        logger.warning(f"Regular click failed, trying JavaScript click: {click_error}")
+                        self.driver.execute_script("arguments[0].click();", dispatch_link)
+                        logger.info("Dispatch link clicked via JavaScript")
+                    
+                    # Wait for navigation to complete
+                    time.sleep(10)
+                    
+                    # Wait for page to be ready
+                    wait.until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+                    time.sleep(5)
+                    
+                    # Verify navigation success
+                    final_url = self.driver.current_url
+                    if "job_dispatch" in final_url or "dispatch" in final_url.lower():
+                        logger.info("✅ Successfully navigated to Dispatch Board via menu link")
+                        return True
+                    else:
+                        logger.warning(f"Navigation via link may have failed - URL: {final_url}")
+                else:
+                    logger.error("No dispatch link found with any selector")
+                
+                # Strategy 3: Try searching for any links and examine them
+                logger.info("Trying to find all links and search for dispatch...")
+                try:
+                    all_links = self.driver.find_elements(By.TAG_NAME, "a")
+                    logger.info(f"Found {len(all_links)} total links on page")
+                    
+                    for link in all_links:
+                        try:
+                            href = link.get_attribute("href") or ""
+                            text = link.text.lower()
+                            if "dispatch" in href.lower() or "dispatch" in text:
+                                logger.info(f"Found potential dispatch link: {href} | {text}")
+                                link.click()
+                                time.sleep(10)
+                                if "dispatch" in self.driver.current_url.lower():
+                                    logger.info("✅ Successfully navigated via link search")
+                                    return True
+                        except Exception as link_error:
+                            continue
+                            
+                except Exception as search_error:
+                    logger.warning(f"Link search strategy failed: {search_error}")
+                
+                # If we get here, this attempt failed
+                if attempt < navigation_retries - 1:
+                    logger.info("Waiting 15 seconds before retry...")
+                    time.sleep(15)
+                    # Try to refresh the page
                     try:
                         self.driver.refresh()
-                        time.sleep(5)
+                        time.sleep(10)
                         logger.info("Page refreshed before retry")
                     except Exception as refresh_error:
                         logger.warning(f"Failed to refresh page: {refresh_error}")
                 else:
-                    return False
-            except NoSuchElementException as e:
-                logger.error(f"Navigation element not found on attempt {attempt + 1}: {e}")
+                    logger.error("All navigation strategies failed")
+                
+            except TimeoutException as e:
+                logger.error(f"Navigation timeout on attempt {attempt + 1}: {e}")
                 if attempt < navigation_retries - 1:
-                    logger.info("Waiting 10 seconds before retry...")
-                    time.sleep(10)
+                    logger.info("Waiting 15 seconds before retry...")
+                    time.sleep(15)
+                    try:
+                        self.driver.refresh()
+                        time.sleep(10)
+                        logger.info("Page refreshed after timeout")
+                    except Exception as refresh_error:
+                        logger.warning(f"Failed to refresh page: {refresh_error}")
                 else:
                     return False
             except Exception as e:
                 logger.error(f"Navigation error on attempt {attempt + 1}: {e}")
                 if attempt < navigation_retries - 1:
-                    logger.info("Waiting 10 seconds before retry...")
-                    time.sleep(10)
+                    logger.info("Waiting 15 seconds before retry...")
+                    time.sleep(15)
                 else:
                     return False
         
