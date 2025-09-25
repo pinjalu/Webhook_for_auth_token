@@ -1,0 +1,53 @@
+name: ServiceM8 API Token Extractor
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  extract-and-send:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Chrome and ChromeDriver
+      uses: browser-actions/setup-chrome@latest
+      with:
+        chrome-version: stable
+        
+    - name: Create .env file
+      run: |
+        echo "EMAIL=${{ secrets.SERVICEM8_EMAIL }}" >> .env
+        echo "PASSWORD=${{ secrets.SERVICEM8_PASSWORD }}" >> .env
+        
+    - name: Run ServiceM8 extraction
+      run: |
+        python main.py
+        
+    - name: Send data to webhook
+      run: |
+        python webhook_test.py
+        
+    - name: Upload results as artifact (optional)
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: servicem8-results-${{ github.run_number }}
+        path: |
+          result.json
+          servicem8_extractor.log
+        retention-days: 7
