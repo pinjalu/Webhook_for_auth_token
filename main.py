@@ -38,22 +38,22 @@ class TimingLogger:
         
     def start_timer(self, step_name="process"):
         self.start_time = datetime.now()
-        logger.info(f"⏱️  Starting {step_name} at {self.start_time.strftime('%H:%M:%S')}")
+        logger.info(f"[TIMER] Starting {step_name} at {self.start_time.strftime('%H:%M:%S')}")
         
     def log_step(self, step_name):
         if self.start_time:
             current_time = datetime.now()
             elapsed = current_time - self.start_time
             self.step_times[step_name] = elapsed
-            logger.info(f"✅ {step_name} completed in {elapsed.total_seconds():.2f} seconds")
+            logger.info(f"[SUCCESS] {step_name} completed in {elapsed.total_seconds():.2f} seconds")
             return elapsed
         return None
     
     def finish_timer(self, process_name="process"):
         if self.start_time:
             total_time = datetime.now() - self.start_time
-            logger.info(f"🏁 Total {process_name} time: {total_time.total_seconds():.2f} seconds")
-            logger.info(f"📊 Process finished at {datetime.now().strftime('%H:%M:%S')}")
+            logger.info(f"[COMPLETE] Total {process_name} time: {total_time.total_seconds():.2f} seconds")
+            logger.info(f"[FINISHED] Process finished at {datetime.now().strftime('%H:%M:%S')}")
             return total_time
         return None
 
@@ -335,10 +335,22 @@ class ServiceM8APIExtractor:
                     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                     time.sleep(10)
                     
-                    # Check if we're on dispatch page
-                    if "job_dispatch" in self.driver.current_url or "dispatch" in self.driver.current_url.lower():
-                        logger.info("✅ Successfully navigated to Dispatch Board via direct URL")
-                        return True
+                # Check if we're on dispatch page
+                current_url = self.driver.current_url
+                page_title = self.driver.title
+                
+                # Check for access denied
+                if "access denied" in page_title.lower() or "access denied" in self.driver.page_source.lower():
+                    logger.error(f"[ACCESS_DENIED] User does not have permission to access Dispatch Board")
+                    logger.error(f"[ACCESS_DENIED] Current URL: {current_url}")
+                    logger.error(f"[ACCESS_DENIED] Page Title: {page_title}")
+                    logger.error(f"[ACCESS_DENIED] This is a ServiceM8 user permission issue, not a technical problem")
+                    logger.error(f"[ACCESS_DENIED] Please check if the user account has 'Dispatch Board' permissions in ServiceM8")
+                    return False
+                
+                if "job_dispatch" in current_url or "dispatch" in current_url.lower():
+                    logger.info("[SUCCESS] Successfully navigated to Dispatch Board via direct URL")
+                    return True
                         
                 except Exception as direct_error:
                     logger.warning(f"Direct URL navigation failed: {direct_error}")
@@ -418,7 +430,7 @@ class ServiceM8APIExtractor:
                     # Verify navigation success
                     final_url = self.driver.current_url
                     if "job_dispatch" in final_url or "dispatch" in final_url.lower():
-                        logger.info("✅ Successfully navigated to Dispatch Board via menu link")
+                        logger.info("[SUCCESS] Successfully navigated to Dispatch Board via menu link")
                         return True
                     else:
                         logger.warning(f"Navigation via link may have failed - URL: {final_url}")
@@ -440,7 +452,7 @@ class ServiceM8APIExtractor:
                                 link.click()
                                 time.sleep(10)
                                 if "dispatch" in self.driver.current_url.lower():
-                                    logger.info("✅ Successfully navigated via link search")
+                                    logger.info("[SUCCESS] Successfully navigated via link search")
                                     return True
                         except Exception as link_error:
                             continue
@@ -525,7 +537,7 @@ class ServiceM8APIExtractor:
     def extract_api_data(self):
         """Extract API tokens and cookies with comprehensive debugging and search patterns"""
         try:
-            logger.info("🔍 Starting comprehensive API data extraction...")
+            logger.info("[EXTRACT] Starting comprehensive API data extraction...")
             
             # First, let's debug what's actually on the page
             debug_js = """
@@ -542,7 +554,7 @@ class ServiceM8APIExtractor:
             """
             
             debug_result = self.driver.execute_script(debug_js)
-            logger.info(f"📊 Page Debug Info:")
+            logger.info(f"[DEBUG] Page Debug Info:")
             logger.info(f"   URL: {debug_result['url']}")
             logger.info(f"   Title: {debug_result['title']}")
             logger.info(f"   Script tags: {debug_result['scriptCount']}")
@@ -730,14 +742,14 @@ class ServiceM8APIExtractor:
             result = self.driver.execute_script(js_code)
             
             # Enhanced logging of search results
-            logger.info(f"🔍 Search Results:")
+            logger.info(f"[SEARCH] Search Results:")
             logger.info(f"   Scripts searched: {result['searchResults']['scriptsSearched']}")
             logger.info(f"   Tokens found: {result['searchResults']['tokensFound']}")
             logger.info(f"   Search patterns used: {result['searchResults']['searchPatterns']}")
             logger.info(f"   API endpoints found: {len(result['apiEndpoints'])}")
             
             if result['apiEndpoints']:
-                logger.info(f"📍 Sample API endpoints:")
+                logger.info(f"[ENDPOINTS] Sample API endpoints:")
                 for endpoint in result['apiEndpoints']:
                     logger.info(f"   {endpoint[:100]}...")
             
@@ -749,7 +761,7 @@ class ServiceM8APIExtractor:
                     cookie_string += "; "
                 cookie_string += f"{cookie['name']}={cookie['value']}"
             
-            logger.info(f"✅ Found {len(result['authTokens'])} auth tokens: {list(result['authTokens'].keys())}")
+            logger.info(f"[TOKENS] Found {len(result['authTokens'])} auth tokens: {list(result['authTokens'].keys())}")
             if result['authTokens']:
                 for token_name, token_value in result['authTokens'].items():
                     logger.info(f"   {token_name}: {token_value[:8]}...")
@@ -793,7 +805,7 @@ class ServiceM8APIExtractor:
         
         # If we found fallback tokens, create generic endpoints
         if not api_data:
-            logger.warning("⚠️  No specific API tokens found, creating fallback endpoints...")
+            logger.warning("[WARNING] No specific API tokens found, creating fallback endpoints...")
             
             if 'GeneralAuth' in auth_tokens:
                 api_data.append({
@@ -820,9 +832,9 @@ class ServiceM8APIExtractor:
                 })
         
         if api_data:
-            logger.info(f"✅ Created {len(api_data)} API endpoints")
+            logger.info(f"[SUCCESS] Created {len(api_data)} API endpoints")
         else:
-            logger.warning("⚠️  No API endpoints could be created from available tokens")
+            logger.warning("[WARNING] No API endpoints could be created from available tokens")
             
         return api_data
     
@@ -847,7 +859,7 @@ class ServiceM8APIExtractor:
                 return None
             
             # Wait additional time for dynamic content to load after navigation
-            logger.info("⏳ Waiting for dynamic content to load...")
+            logger.info("[WAIT] Waiting for dynamic content to load...")
             time.sleep(20)  # Give extra time for any JavaScript to execute and load tokens
             
             # Extract API data with retry logic
@@ -884,19 +896,19 @@ def main():
     timer.start_timer("ServiceM8 API Token Extraction")
     
     try:
-        logger.info("🚀 Starting ServiceM8 API Token Extractor...")
-        logger.info(f"📅 Execution started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("[START] Starting ServiceM8 API Token Extractor...")
+        logger.info(f"[TIME] Execution started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Check environment variables
         email = os.getenv("EMAIL")
         password = os.getenv("PASSWORD")
         
         if not email or not password:
-            logger.error("❌ EMAIL and PASSWORD environment variables not found!")
+            logger.error("[ERROR] EMAIL and PASSWORD environment variables not found!")
             logger.error("Please create a .env file with your ServiceM8 credentials")
             return
         
-        logger.info("✅ Environment variables loaded successfully")
+        logger.info("[SUCCESS] Environment variables loaded successfully")
         timer.log_step("Environment setup")
         
         # Run extraction with increased retries for better resilience
@@ -911,49 +923,49 @@ def main():
             
             # Validate result before saving
             if result is None:
-                logger.error("❌ Cannot save result - extraction returned None")
+                logger.error("[ERROR] Cannot save result - extraction returned None")
                 with open("result.json", "w") as f:
                     json.dump([], f, indent=3)  # Save empty array instead of null
-                logger.warning("⚠️  Saved empty array to result.json to prevent webhook errors")
+                logger.warning("[WARNING] Saved empty array to result.json to prevent webhook errors")
             elif not result:
-                logger.warning("⚠️  Extraction returned empty result")
+                logger.warning("[WARNING] Extraction returned empty result")
                 with open("result.json", "w") as f:
                     json.dump([], f, indent=3)  # Save empty array
-                logger.info("📄 Saved empty array to result.json")
+                logger.info("[INFO] Saved empty array to result.json")
             else:
                 with open("result.json", "w") as f:
                     json.dump(result, f, indent=3)
-                logger.info(f"✅ Results saved to result.json in {(datetime.now() - save_start).total_seconds():.2f} seconds")
+                logger.info(f"[SUCCESS] Results saved to result.json in {(datetime.now() - save_start).total_seconds():.2f} seconds")
             
             timer.log_step("File save")
         except Exception as e:
-            logger.error(f"❌ Failed to save results to file: {e}")
+            logger.error(f"[ERROR] Failed to save results to file: {e}")
             # Create a fallback empty file to prevent webhook errors
             try:
                 with open("result.json", "w") as f:
                     json.dump([], f, indent=3)
-                logger.warning("⚠️  Created fallback empty result.json file")
+                logger.warning("[WARNING] Created fallback empty result.json file")
             except Exception as fallback_error:
-                logger.error(f"❌ Failed to create fallback result.json: {fallback_error}")
+                logger.error(f"[ERROR] Failed to create fallback result.json: {fallback_error}")
         
         if result:
-            logger.info("🎉 Extraction completed successfully!")
-            logger.info(f"📊 Found {len(result)} API endpoints")
-            logger.info(f"🔗 Endpoints extracted: {[item.get('url', 'Unknown')[:50] + '...' for item in result]}")
+            logger.info("[SUCCESS] Extraction completed successfully!")
+            logger.info(f"[RESULT] Found {len(result)} API endpoints")
+            logger.info(f"[ENDPOINTS] Endpoints extracted: {[item.get('url', 'Unknown')[:50] + '...' for item in result]}")
         else:
-            logger.error("❌ Extraction failed - no data retrieved")
-            logger.error("🔍 Possible causes:")
+            logger.error("[ERROR] Extraction failed - no data retrieved")
+            logger.error("[DEBUG] Possible causes:")
             logger.error("   - Navigation to Dispatch Board failed")
             logger.error("   - Page did not load completely")
             logger.error("   - API tokens not found in page source")
             logger.error("   - ServiceM8 UI has changed")
-            logger.error("📄 Empty result.json created to prevent downstream errors")
+            logger.error("[INFO] Empty result.json created to prevent downstream errors")
             
     except Exception as e:
-        logger.error(f"💥 Critical error in main function: {e}")
+        logger.error(f"[CRITICAL] Critical error in main function: {e}")
     finally:
         timer.finish_timer("ServiceM8 API Token Extraction")
-        logger.info("🏁 ServiceM8 API Token Extractor finished")
+        logger.info("[FINISHED] ServiceM8 API Token Extractor finished")
         logger.info("=" * 80)
 
 if __name__ == "__main__":
