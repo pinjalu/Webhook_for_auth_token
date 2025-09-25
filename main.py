@@ -523,88 +523,223 @@ class ServiceM8APIExtractor:
         return {}, ""
     
     def extract_api_data(self):
-        """Extract API tokens and cookies for specific URLs"""
+        """Extract API tokens and cookies with comprehensive debugging and search patterns"""
         try:
-            logger.info("Extracting API data...")
-            # JavaScript to find specific API URLs and tokens
+            logger.info("🔍 Starting comprehensive API data extraction...")
+            
+            # First, let's debug what's actually on the page
+            debug_js = """
+            var debugInfo = {
+                url: window.location.href,
+                title: document.title,
+                scriptCount: document.getElementsByTagName('script').length,
+                hasCalendar: document.body.innerHTML.includes('CalendarStoreRequest'),
+                hasPluginReminders: document.body.innerHTML.includes('PluginReminders'),
+                hasAuthToken: document.body.innerHTML.includes('s_auth='),
+                pageLength: document.body.innerHTML.length
+            };
+            return debugInfo;
+            """
+            
+            debug_result = self.driver.execute_script(debug_js)
+            logger.info(f"📊 Page Debug Info:")
+            logger.info(f"   URL: {debug_result['url']}")
+            logger.info(f"   Title: {debug_result['title']}")
+            logger.info(f"   Script tags: {debug_result['scriptCount']}")
+            logger.info(f"   Has CalendarStoreRequest: {debug_result['hasCalendar']}")
+            logger.info(f"   Has PluginReminders: {debug_result['hasPluginReminders']}")
+            logger.info(f"   Has s_auth tokens: {debug_result['hasAuthToken']}")
+            logger.info(f"   Page content size: {debug_result['pageLength']} chars")
+            
+            # Enhanced JavaScript to find tokens with multiple strategies
             js_code = """
             var apiData = [];
             var authTokens = {};
             var allUrls = [];
+            var searchResults = {
+                scriptsSearched: 0,
+                tokensFound: 0,
+                searchPatterns: []
+            };
             
-            // Search all script tags
+            // Strategy 1: Search all script tags with enhanced patterns
             var scripts = document.getElementsByTagName('script');
+            searchResults.scriptsSearched = scripts.length;
+            
             for (var i = 0; i < scripts.length; i++) {
-                var scriptContent = scripts[i].innerHTML;
+                var scriptContent = scripts[i].innerHTML || scripts[i].textContent || '';
                 
-                // Look for CalendarStoreRequest
-                var calendarMatches = scriptContent.match(/CalendarStoreRequest[^'"]*s_auth=([a-f0-9]+)/g);
-                if (calendarMatches) {
-                    calendarMatches.forEach(function(match) {
+                // Enhanced patterns for CalendarStoreRequest
+                var calendarPatterns = [
+                    /CalendarStoreRequest[^'"]*s_auth=([a-f0-9]+)/gi,
+                    /CalendarStoreRequest.*?s_auth=([a-f0-9]+)/gi,
+                    /'CalendarStoreRequest'[^']*s_auth=([a-f0-9]+)/gi,
+                    /"CalendarStoreRequest"[^"]*s_auth=([a-f0-9]+)/gi
+                ];
+                
+                calendarPatterns.forEach(function(pattern) {
+                    var matches = scriptContent.match(pattern);
+                    if (matches) {
+                        matches.forEach(function(match) {
+                            var authMatch = match.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch) {
+                                authTokens['CalendarStoreRequest'] = authMatch[1];
+                                allUrls.push('CalendarStoreRequest');
+                                searchResults.tokensFound++;
+                                searchResults.searchPatterns.push('CalendarStoreRequest pattern');
+                            }
+                        });
+                    }
+                });
+                
+                // Enhanced patterns for UpdateReminderForJobActivity
+                var updatePatterns = [
+                    /PluginReminders_UpdateReminderForJobActivity[^'"]*s_auth=([a-f0-9]+)/gi,
+                    /UpdateReminderForJobActivity[^'"]*s_auth=([a-f0-9]+)/gi,
+                    /'UpdateReminderForJobActivity'[^']*s_auth=([a-f0-9]+)/gi,
+                    /"UpdateReminderForJobActivity"[^"]*s_auth=([a-f0-9]+)/gi
+                ];
+                
+                updatePatterns.forEach(function(pattern) {
+                    var matches = scriptContent.match(pattern);
+                    if (matches) {
+                        matches.forEach(function(match) {
+                            var authMatch = match.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch) {
+                                authTokens['UpdateReminderForJobActivity'] = authMatch[1];
+                                allUrls.push('UpdateReminderForJobActivity');
+                                searchResults.tokensFound++;
+                                searchResults.searchPatterns.push('UpdateReminderForJobActivity pattern');
+                            }
+                        });
+                    }
+                });
+                
+                // Enhanced patterns for SaveRecurringJobSchedule
+                var savePatterns = [
+                    /PluginReminders_SaveRecurringJobSchedule[^'"]*s_auth=([a-f0-9]+)/gi,
+                    /SaveRecurringJobSchedule[^'"]*s_auth=([a-f0-9]+)/gi,
+                    /'SaveRecurringJobSchedule'[^']*s_auth=([a-f0-9]+)/gi,
+                    /"SaveRecurringJobSchedule"[^"]*s_auth=([a-f0-9]+)/gi
+                ];
+                
+                savePatterns.forEach(function(pattern) {
+                    var matches = scriptContent.match(pattern);
+                    if (matches) {
+                        matches.forEach(function(match) {
+                            var authMatch = match.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch) {
+                                authTokens['SaveRecurringJobSchedule'] = authMatch[1];
+                                allUrls.push('SaveRecurringJobSchedule');
+                                searchResults.tokensFound++;
+                                searchResults.searchPatterns.push('SaveRecurringJobSchedule pattern');
+                            }
+                        });
+                    }
+                });
+                
+                // General s_auth token search for any missed tokens
+                var generalAuthMatches = scriptContent.match(/s_auth=([a-f0-9]+)/g);
+                if (generalAuthMatches && !authTokens['GeneralAuth']) {
+                    generalAuthMatches.forEach(function(match) {
                         var authMatch = match.match(/s_auth=([a-f0-9]+)/);
                         if (authMatch) {
-                            authTokens['CalendarStoreRequest'] = authMatch[1];
-                            allUrls.push('CalendarStoreRequest');
-                        }
-                    });
-                }
-                
-                // Look for PluginReminders_UpdateReminderForJobActivity
-                var updateMatches = scriptContent.match(/PluginReminders_UpdateReminderForJobActivity[^'"]*s_auth=([a-f0-9]+)/g);
-                if (updateMatches) {
-                    updateMatches.forEach(function(match) {
-                        var authMatch = match.match(/s_auth=([a-f0-9]+)/);
-                        if (authMatch) {
-                            authTokens['UpdateReminderForJobActivity'] = authMatch[1];
-                            allUrls.push('UpdateReminderForJobActivity');
-                        }
-                    });
-                }
-                
-                // Look for PluginReminders_SaveRecurringJobSchedule
-                var saveMatches = scriptContent.match(/PluginReminders_SaveRecurringJobSchedule[^'"]*s_auth=([a-f0-9]+)/g);
-                if (saveMatches) {
-                    saveMatches.forEach(function(match) {
-                        var authMatch = match.match(/s_auth=([a-f0-9]+)/);
-                        if (authMatch) {
-                            authTokens['SaveRecurringJobSchedule'] = authMatch[1];
-                            allUrls.push('SaveRecurringJobSchedule');
+                            authTokens['GeneralAuth'] = authMatch[1];
+                            allUrls.push('GeneralAuth');
+                            searchResults.tokensFound++;
+                            searchResults.searchPatterns.push('General s_auth pattern');
                         }
                     });
                 }
             }
             
-            // Also search in window object
+            // Strategy 2: Search in window object with enhanced patterns
             for (var prop in window) {
-                if (typeof window[prop] === 'string' && window[prop].includes('s_auth=')) {
-                    if (window[prop].includes('CalendarStoreRequest')) {
-                        var authMatch = window[prop].match(/s_auth=([a-f0-9]+)/);
-                        if (authMatch) {
-                            authTokens['CalendarStoreRequest'] = authMatch[1];
+                try {
+                    if (typeof window[prop] === 'string' && window[prop].includes('s_auth=')) {
+                        var propContent = window[prop];
+                        
+                        if (propContent.includes('CalendarStoreRequest')) {
+                            var authMatch = propContent.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch && !authTokens['CalendarStoreRequest']) {
+                                authTokens['CalendarStoreRequest'] = authMatch[1];
+                                searchResults.searchPatterns.push('Window CalendarStoreRequest');
+                            }
+                        }
+                        if (propContent.includes('UpdateReminderForJobActivity') || propContent.includes('PluginReminders_UpdateReminderForJobActivity')) {
+                            var authMatch = propContent.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch && !authTokens['UpdateReminderForJobActivity']) {
+                                authTokens['UpdateReminderForJobActivity'] = authMatch[1];
+                                searchResults.searchPatterns.push('Window UpdateReminderForJobActivity');
+                            }
+                        }
+                        if (propContent.includes('SaveRecurringJobSchedule') || propContent.includes('PluginReminders_SaveRecurringJobSchedule')) {
+                            var authMatch = propContent.match(/s_auth=([a-f0-9]+)/);
+                            if (authMatch && !authTokens['SaveRecurringJobSchedule']) {
+                                authTokens['SaveRecurringJobSchedule'] = authMatch[1];
+                                searchResults.searchPatterns.push('Window SaveRecurringJobSchedule');
+                            }
                         }
                     }
-                    if (window[prop].includes('PluginReminders_UpdateReminderForJobActivity')) {
-                        var authMatch = window[prop].match(/s_auth=([a-f0-9]+)/);
-                        if (authMatch) {
-                            authTokens['UpdateReminderForJobActivity'] = authMatch[1];
-                        }
-                    }
-                    if (window[prop].includes('PluginReminders_SaveRecurringJobSchedule')) {
-                        var authMatch = window[prop].match(/s_auth=([a-f0-9]+)/);
-                        if (authMatch) {
-                            authTokens['SaveRecurringJobSchedule'] = authMatch[1];
-                        }
-                    }
+                } catch (e) {
+                    // Skip properties that can't be accessed
                 }
             }
+            
+            // Strategy 3: Search entire page HTML as fallback
+            var pageHTML = document.documentElement.outerHTML;
+            var allAuthMatches = pageHTML.match(/s_auth=([a-f0-9]+)/g);
+            if (allAuthMatches && Object.keys(authTokens).length === 0) {
+                // If no specific tokens found, grab the first available s_auth token
+                var firstAuthMatch = allAuthMatches[0].match(/s_auth=([a-f0-9]+)/);
+                if (firstAuthMatch) {
+                    authTokens['FallbackAuth'] = firstAuthMatch[1];
+                    searchResults.searchPatterns.push('Fallback HTML search');
+                }
+            }
+            
+            // Strategy 4: Search for any API endpoints in the page
+            var apiEndpoints = [];
+            var endpointPatterns = [
+                /https?:\/\/[^'"]+\.servicem8\.com[^'"]+s_auth=([a-f0-9]+)/g,
+                /\/[^'"]*s_auth=([a-f0-9]+)/g
+            ];
+            
+            endpointPatterns.forEach(function(pattern) {
+                var matches = pageHTML.match(pattern);
+                if (matches) {
+                    matches.forEach(function(match) {
+                        apiEndpoints.push(match);
+                        var authMatch = match.match(/s_auth=([a-f0-9]+)/);
+                        if (authMatch && Object.keys(authTokens).length === 0) {
+                            authTokens['EndpointAuth'] = authMatch[1];
+                            searchResults.searchPatterns.push('API endpoint search');
+                        }
+                    });
+                }
+            });
             
             return {
                 authTokens: authTokens,
-                foundUrls: allUrls
+                foundUrls: allUrls,
+                searchResults: searchResults,
+                apiEndpoints: apiEndpoints.slice(0, 5) // Return first 5 endpoints for debugging
             };
             """
             
             result = self.driver.execute_script(js_code)
+            
+            # Enhanced logging of search results
+            logger.info(f"🔍 Search Results:")
+            logger.info(f"   Scripts searched: {result['searchResults']['scriptsSearched']}")
+            logger.info(f"   Tokens found: {result['searchResults']['tokensFound']}")
+            logger.info(f"   Search patterns used: {result['searchResults']['searchPatterns']}")
+            logger.info(f"   API endpoints found: {len(result['apiEndpoints'])}")
+            
+            if result['apiEndpoints']:
+                logger.info(f"📍 Sample API endpoints:")
+                for endpoint in result['apiEndpoints']:
+                    logger.info(f"   {endpoint[:100]}...")
             
             # Get cookies
             all_cookies = self.driver.get_cookies()
@@ -614,7 +749,11 @@ class ServiceM8APIExtractor:
                     cookie_string += "; "
                 cookie_string += f"{cookie['name']}={cookie['value']}"
             
-            logger.info(f"Found {len(result['authTokens'])} auth tokens: {list(result['authTokens'].keys())}")
+            logger.info(f"✅ Found {len(result['authTokens'])} auth tokens: {list(result['authTokens'].keys())}")
+            if result['authTokens']:
+                for token_name, token_value in result['authTokens'].items():
+                    logger.info(f"   {token_name}: {token_value[:8]}...")
+            
             return result['authTokens'], cookie_string
             
         except WebDriverException as e:
@@ -625,7 +764,7 @@ class ServiceM8APIExtractor:
             return {}, ""
     
     def create_api_response(self, auth_tokens, cookie_string):
-        """Create the response in the requested format"""
+        """Create the response in the requested format with support for fallback tokens"""
         api_data = []
         
         # CalendarStoreRequest
@@ -652,6 +791,39 @@ class ServiceM8APIExtractor:
                 "s_auth": auth_tokens['SaveRecurringJobSchedule']
             })
         
+        # If we found fallback tokens, create generic endpoints
+        if not api_data:
+            logger.warning("⚠️  No specific API tokens found, creating fallback endpoints...")
+            
+            if 'GeneralAuth' in auth_tokens:
+                api_data.append({
+                    "url": f"https://go.servicem8.com/CalendarStoreRequest?s_cv=&s_form_values=query-start-limit-_dc-callback-records-xaction-end-id-strJobUUID&s_auth={auth_tokens['GeneralAuth']}",
+                    "cookie": cookie_string,
+                    "s_auth": auth_tokens['GeneralAuth'],
+                    "type": "fallback_calendar"
+                })
+                
+            if 'FallbackAuth' in auth_tokens:
+                api_data.append({
+                    "url": f"https://go.servicem8.com/CalendarStoreRequest?s_cv=&s_form_values=query-start-limit-_dc-callback-records-xaction-end-id-strJobUUID&s_auth={auth_tokens['FallbackAuth']}",
+                    "cookie": cookie_string,
+                    "s_auth": auth_tokens['FallbackAuth'],
+                    "type": "fallback_general"
+                })
+                
+            if 'EndpointAuth' in auth_tokens:
+                api_data.append({
+                    "url": f"https://go.servicem8.com/CalendarStoreRequest?s_cv=&s_form_values=query-start-limit-_dc-callback-records-xaction-end-id-strJobUUID&s_auth={auth_tokens['EndpointAuth']}",
+                    "cookie": cookie_string,
+                    "s_auth": auth_tokens['EndpointAuth'],
+                    "type": "fallback_endpoint"
+                })
+        
+        if api_data:
+            logger.info(f"✅ Created {len(api_data)} API endpoints")
+        else:
+            logger.warning("⚠️  No API endpoints could be created from available tokens")
+            
         return api_data
     
     def extract(self):
@@ -673,6 +845,10 @@ class ServiceM8APIExtractor:
             if not self.navigate_to_dispatch():
                 logger.error("Failed to navigate to Dispatch Board")
                 return None
+            
+            # Wait additional time for dynamic content to load after navigation
+            logger.info("⏳ Waiting for dynamic content to load...")
+            time.sleep(20)  # Give extra time for any JavaScript to execute and load tokens
             
             # Extract API data with retry logic
             auth_tokens, cookie_string = self.extract_with_retry()
