@@ -14,6 +14,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 from dotenv import load_dotenv
 import requests
 
@@ -32,12 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class ServiceM8APIExtractor:
-    def __init__(self, max_retries=3):
+    def __init__(self, max_retries=3, download_dir=None):
         self.driver = None
         self.email = os.getenv("EMAIL")
         self.password = os.getenv("PASSWORD")
         self.max_retries = max_retries
         self.cookies_file = "servicem8_cookies.json"
+        self.download_dir = download_dir or os.path.join(os.getcwd(), "downloads")
         logger.info("ServiceM8APIExtractor initialized")
         
     def save_cookies(self):
@@ -222,7 +225,7 @@ class ServiceM8APIExtractor:
             return False
 
     def setup_chrome(self):
-        """Setup Chrome with retry mechanism for browser initialization failures"""
+        """Setup Chrome with retry mechanism for browser initialization failures and download support"""
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"Chrome browser setup attempt {attempt + 1}/{self.max_retries}")
@@ -234,6 +237,11 @@ class ServiceM8APIExtractor:
                     except:
                         pass
                     self.driver = None
+                
+                # Create download directory if it doesn't exist
+                if not os.path.exists(self.download_dir):
+                    os.makedirs(self.download_dir)
+                    logger.info(f"Created download directory: {self.download_dir}")
                 
                 options = Options()
                 # try with headless first
@@ -258,7 +266,28 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-backgrounding-occluded-windows")
                 options.add_argument("--disable-renderer-backgrounding")
                 
-                self.driver = webdriver.Chrome(options=options)
+                # Download preferences
+                prefs = {
+                    "download.default_directory": self.download_dir,
+                    "download.prompt_for_download": False,
+                    "download.directory_upgrade": True,
+                    "safebrowsing.enabled": True,
+                    "safebrowsing.disable_download_protection": True,
+                    "profile.default_content_settings.popups": 0,
+                    "profile.default_content_setting_values.notifications": 2,
+                    "profile.managed_default_content_settings.images": 2
+                }
+                options.add_experimental_option("prefs", prefs)
+                
+                # Use webdriver-manager to automatically download and manage ChromeDriver
+                try:
+                    service = Service(ChromeDriverManager().install())
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    logger.info("ChromeDriver automatically downloaded and configured")
+                except Exception as e:
+                    logger.warning(f"Failed to use webdriver-manager, falling back to system ChromeDriver: {e}")
+                    self.driver = webdriver.Chrome(options=options)
+                
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 
                 # Test if browser is working
@@ -282,6 +311,84 @@ class ServiceM8APIExtractor:
                     return False
         
         return False
+    
+    def download_file(self, url, filename=None):
+        """Download a file using the configured Chrome browser"""
+        try:
+            logger.info(f"Starting download from: {url}")
+            
+            # Navigate to the download URL
+            self.driver.get(url)
+            time.sleep(3)  # Wait for download to start
+            
+            # If filename is provided, we can rename the file after download
+            if filename:
+                # Wait for download to complete and rename if needed
+                self.wait_for_download_completion(filename)
+            
+            logger.info("Download completed successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error downloading file: {e}")
+            return False
+    
+    def wait_for_download_completion(self, expected_filename=None, timeout=60):
+        """Wait for download to complete and optionally rename the file"""
+        try:
+            import glob
+            
+            # Wait for download to complete
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                # Check for .crdownload files (Chrome download in progress)
+                temp_files = glob.glob(os.path.join(self.download_dir, "*.crdownload"))
+                if not temp_files:
+                    # Check for the expected file or any new files
+                    if expected_filename:
+                        expected_path = os.path.join(self.download_dir, expected_filename)
+                        if os.path.exists(expected_path):
+                            logger.info(f"Download completed: {expected_filename}")
+                            return expected_path
+                    else:
+                        # Find the most recently downloaded file
+                        all_files = glob.glob(os.path.join(self.download_dir, "*"))
+                        if all_files:
+                            latest_file = max(all_files, key=os.path.getctime)
+                            logger.info(f"Download completed: {os.path.basename(latest_file)}")
+                            return latest_file
+                
+                time.sleep(1)
+            
+            logger.warning("Download timeout reached")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error waiting for download completion: {e}")
+            return None
+    
+    def get_downloaded_files(self):
+        """Get list of files in the download directory"""
+        try:
+            if not os.path.exists(self.download_dir):
+                return []
+            
+            files = []
+            for filename in os.listdir(self.download_dir):
+                file_path = os.path.join(self.download_dir, filename)
+                if os.path.isfile(file_path):
+                    files.append({
+                        'name': filename,
+                        'path': file_path,
+                        'size': os.path.getsize(file_path),
+                        'modified': os.path.getmtime(file_path)
+                    })
+            
+            return sorted(files, key=lambda x: x['modified'], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Error getting downloaded files: {e}")
+            return []
     
     def check_website_responsiveness(self, url):
         """Check if website is responsive by making a simple request"""
@@ -733,8 +840,9 @@ def main():
         
         logger.info("Environment variables loaded successfully")
         
-        # Run extraction
-        extractor = ServiceM8APIExtractor(max_retries=3)
+        # Run extraction with download support
+        download_dir = os.getenv("DOWNLOAD_DIR", "downloads")
+        extractor = ServiceM8APIExtractor(max_retries=3, download_dir=download_dir)
         result = extractor.extract()
 
         # Store result in json file
@@ -757,6 +865,16 @@ def main():
         if result:
             logger.info("Extraction completed successfully!")
             logger.info(f"Found {len(result)} API endpoints")
+            
+            # Example: Download files if needed
+            # You can add download functionality here
+            # Example usage:
+            # download_url = "https://example.com/file.pdf"
+            # if extractor.download_file(download_url, "downloaded_file.pdf"):
+            #     logger.info("File downloaded successfully")
+            #     downloaded_files = extractor.get_downloaded_files()
+            #     logger.info(f"Downloaded files: {[f['name'] for f in downloaded_files]}")
+            
             # Uncomment the next line if you want to print results to console
             # print(json.dumps(result, indent=2))
         else:
