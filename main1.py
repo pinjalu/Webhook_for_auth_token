@@ -570,16 +570,59 @@ class ServiceM8APIExtractor:
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"Navigation to Dispatch Board attempt {attempt + 1}/{self.max_retries}")
-                wait = WebDriverWait(self.driver, 10)
+                wait = WebDriverWait(self.driver, 20)  # Increased timeout
                 
                 # Remove any ExtJS masks that might block clicks
                 self.remove_extjs_mask()
                 
-                # Wait for navigation menu to be present
-                nav_menu = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "ThemeMainMenu")))
+                # Wait for page to be fully loaded
+                time.sleep(5)
                 
-                # Wait for dispatch link to be clickable
-                dispatch_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'job_dispatch')]")))
+                # Try multiple strategies to find and click dispatch link
+                dispatch_selectors = [
+                    "//a[contains(@href, 'job_dispatch')]",
+                    "//a[contains(text(), 'Dispatch')]",
+                    "//a[contains(text(), 'dispatch')]",
+                    "//span[contains(text(), 'Dispatch')]/parent::a",
+                    "//div[contains(text(), 'Dispatch')]/parent::a",
+                    "//*[contains(@class, 'dispatch')]//a",
+                    "//*[contains(@id, 'dispatch')]//a"
+                ]
+                
+                dispatch_link = None
+                for selector in dispatch_selectors:
+                    try:
+                        dispatch_link = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+                        logger.info(f"Dispatch link found using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        logger.debug(f"Selector failed: {selector}")
+                        continue
+                
+                if not dispatch_link:
+                    # Try direct URL navigation as fallback
+                    logger.info("No dispatch link found, trying direct URL navigation...")
+                    current_url = self.driver.current_url
+                    base_url = current_url.split('/')[0] + '//' + current_url.split('/')[2]
+                    dispatch_url = f"{base_url}/job_dispatch"
+                    
+                    try:
+                        self.driver.get(dispatch_url)
+                        time.sleep(10)
+                        current_url = self.driver.current_url
+                        if "job_dispatch" in current_url or "dispatch" in current_url.lower():
+                            logger.info("Successfully navigated to Dispatch Board via direct URL")
+                            return True
+                    except Exception as direct_error:
+                        logger.warning(f"Direct URL navigation failed: {direct_error}")
+                    
+                    logger.error("All navigation strategies failed")
+                    if attempt < self.max_retries - 1:
+                        logger.info("Waiting 5 seconds before retry...")
+                        time.sleep(5)
+                        continue
+                    else:
+                        return False
                 
                 # Human-like mouse movement to the dispatch link
                 action = ActionChains(self.driver)
