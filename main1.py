@@ -57,7 +57,7 @@ class ServiceM8APIExtractor:
                 
                 options = Options()
                 
-                # Server-specific options - don't use user-data-dir to avoid conflicts
+                # Server-specific options - use Chrome's default temporary profile
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
@@ -183,10 +183,22 @@ class ServiceM8APIExtractor:
                 # Try to kill any existing Chrome processes
                 try:
                     import subprocess
-                    subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
-                    subprocess.run(["pkill", "-f", "chromedriver"], capture_output=True)
+                    import psutil
+                    
+                    # Kill all Chrome processes
+                    for proc in psutil.process_iter(['pid', 'name']):
+                        try:
+                            if proc.info['name'] and ('chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower()):
+                                proc.kill()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                    
+                    # Also try pkill as backup
+                    subprocess.run(["pkill", "-9", "-f", "chrome"], capture_output=True, timeout=5)
+                    subprocess.run(["pkill", "-9", "-f", "chromedriver"], capture_output=True, timeout=5)
                     time.sleep(2)
-                except:
+                except Exception as e:
+                    logger.debug(f"Process cleanup failed: {e}")
                     pass
                 
                 self.driver = webdriver.Chrome(options=options)
@@ -868,10 +880,21 @@ class ServiceM8APIExtractor:
             # Clean up any remaining Chrome processes
             try:
                 import subprocess
-                subprocess.run(["pkill", "-f", "chrome"], capture_output=True)
-                subprocess.run(["pkill", "-f", "chromedriver"], capture_output=True)
+                import psutil
+                
+                # Kill any remaining Chrome processes
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if proc.info['name'] and ('chrome' in proc.info['name'].lower() or 'chromedriver' in proc.info['name'].lower()):
+                            proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                
+                # Backup cleanup with pkill
+                subprocess.run(["pkill", "-9", "-f", "chrome"], capture_output=True, timeout=5)
+                subprocess.run(["pkill", "-9", "-f", "chromedriver"], capture_output=True, timeout=5)
             except Exception as e:
-                logger.debug(f"Failed to clean up Chrome processes: {e}")
+                logger.debug(f"Failed to clean up: {e}")
 
 def main():
     """Main function with comprehensive error handling"""
