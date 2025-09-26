@@ -38,7 +38,10 @@ class ServiceM8APIExtractor:
         self.driver = None
         self.email = os.getenv("EMAIL")
         self.password = os.getenv("PASSWORD")
+        self.auth_code = os.getenv("AUTH_CODE")  # For 2FA
         self.max_retries = max_retries
+        self.is_server = os.getenv("SERVER_MODE", "false").lower() == "true"
+        self.device_fingerprint_file = "device_fingerprint.json"
         self.screenshots_folder = "screenshots"
         self._create_screenshots_folder()
         logger.info("ServiceM8APIExtractor initialized")
@@ -90,12 +93,50 @@ class ServiceM8APIExtractor:
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
-                options.add_argument("--headless=new")  # Run in headless mode for server
+                # Enable headless mode for server environment
+                if self.is_server:
+                    options.add_argument("--headless=new")
+                    options.add_argument("--disable-gpu")
+                    options.add_argument("--no-sandbox")
+                    options.add_argument("--disable-dev-shm-usage")
+                    options.add_argument("--disable-software-rasterizer")
+                    options.add_argument("--disable-background-timer-throttling")
+                    options.add_argument("--disable-backgrounding-occluded-windows")
+                    options.add_argument("--disable-renderer-backgrounding")
+                    options.add_argument("--disable-features=VizDisplayCompositor")
+                    logger.info("Running in server mode with headless browser")
                 options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
-                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+                # Use consistent user agent to mimic existing device
+                consistent_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                options.add_argument(f"--user-agent={consistent_user_agent}")
+                
+                # Add consistent browser fingerprinting to avoid "new location" detection
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option('useAutomationExtension', False)
+                
+                # Add consistent viewport and screen resolution
+                options.add_argument("--window-size=1920,1080")
+                options.add_argument("--start-maximized")
+                
+                # Add consistent timezone (adjust as needed for your location)
+                options.add_argument("--timezone=Australia/Sydney")
+                
+                # Add consistent language preferences
+                options.add_argument("--lang=en-AU")
+                options.add_argument("--accept-lang=en-AU,en;q=0.9")
+                
+                # Add consistent device characteristics
+                options.add_argument("--force-device-scale-factor=1")
+                options.add_argument("--high-dpi-support=1")
+                
+                # Add consistent network characteristics
+                options.add_argument("--disable-background-networking")
+                options.add_argument("--disable-default-apps")
+                options.add_argument("--disable-sync")
                 
                 # Additional stability options for server environment
                 options.add_argument("--disable-extensions")
@@ -233,6 +274,16 @@ class ServiceM8APIExtractor:
                 self.driver = webdriver.Chrome(options=options)
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 
+                # Load and apply device fingerprint to maintain consistent identity
+                fingerprint_data = self.load_device_fingerprint()
+                if fingerprint_data:
+                    if self.apply_device_fingerprint(fingerprint_data):
+                        logger.info("Applied existing device fingerprint to avoid 'new location' detection")
+                    else:
+                        logger.warning("Failed to apply device fingerprint, continuing without it")
+                else:
+                    logger.info("No existing fingerprint found, will create new one after first successful login")
+                
                 # Test if browser is working
                 self.driver.get("about:blank")
                 logger.info("Chrome browser setup successful")
@@ -319,10 +370,334 @@ class ServiceM8APIExtractor:
                     logger.error("Failed to load website after all retry attempts")
                     return False
         
-        return False
+            return False
 
+    def save_device_fingerprint(self):
+        """Save device fingerprint to maintain consistent identity"""
+        try:
+            if not self.driver:
+                return False
+                
+            # Get browser fingerprint data
+            fingerprint_data = {
+                "user_agent": self.driver.execute_script("return navigator.userAgent"),
+                "platform": self.driver.execute_script("return navigator.platform"),
+                "language": self.driver.execute_script("return navigator.language"),
+                "languages": self.driver.execute_script("return navigator.languages"),
+                "timezone": self.driver.execute_script("return Intl.DateTimeFormat().resolvedOptions().timeZone"),
+                "screen_resolution": self.driver.execute_script("return screen.width + 'x' + screen.height"),
+                "color_depth": self.driver.execute_script("return screen.colorDepth"),
+                "pixel_ratio": self.driver.execute_script("return window.devicePixelRatio"),
+                "webgl_vendor": self.driver.execute_script("""
+                    try {
+                        var canvas = document.createElement('canvas');
+                        var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        return gl ? gl.getParameter(gl.VENDOR) : 'unknown';
+                    } catch(e) { return 'unknown'; }
+                """),
+                "webgl_renderer": self.driver.execute_script("""
+                    try {
+                        var canvas = document.createElement('canvas');
+                        var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        return gl ? gl.getParameter(gl.RENDERER) : 'unknown';
+                    } catch(e) { return 'unknown'; }
+                """),
+                "timestamp": time.time()
+            }
+            
+            with open(self.device_fingerprint_file, 'w') as f:
+                json.dump(fingerprint_data, f, indent=2)
+            
+            logger.info("Device fingerprint saved successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save device fingerprint: {e}")
+            return False
 
+    def load_device_fingerprint(self):
+        """Load existing device fingerprint to maintain consistent identity"""
+        try:
+            if not os.path.exists(self.device_fingerprint_file):
+                logger.info("No device fingerprint found, will create new one")
+                return None
+            
+            with open(self.device_fingerprint_file, 'r') as f:
+                fingerprint_data = json.load(f)
+            
+            # Check if fingerprint is recent (within 30 days)
+            current_time = time.time()
+            fingerprint_age = current_time - fingerprint_data.get('timestamp', 0)
+            if fingerprint_age > 30 * 24 * 60 * 60:  # 30 days
+                logger.info("Device fingerprint is too old, will create new one")
+                return None
+            
+            logger.info("Loaded existing device fingerprint")
+            return fingerprint_data
+            
+        except Exception as e:
+            logger.error(f"Failed to load device fingerprint: {e}")
+            return None
 
+    def apply_device_fingerprint(self, fingerprint_data):
+        """Apply device fingerprint to browser to maintain consistent identity"""
+        try:
+            if not fingerprint_data or not self.driver:
+                return False
+            
+            # Navigate to a page first to ensure JavaScript context is available
+            self.driver.get("about:blank")
+            time.sleep(1)
+            
+            # Apply fingerprint data using JavaScript
+            js_code = f"""
+                // Override navigator properties
+                Object.defineProperty(navigator, 'userAgent', {{
+                    get: function() {{ return '{fingerprint_data.get('user_agent', '')}'; }}
+                }});
+                
+                Object.defineProperty(navigator, 'platform', {{
+                    get: function() {{ return '{fingerprint_data.get('platform', '')}'; }}
+                }});
+                
+                Object.defineProperty(navigator, 'language', {{
+                    get: function() {{ return '{fingerprint_data.get('language', '')}'; }}
+                }});
+                
+                Object.defineProperty(navigator, 'languages', {{
+                    get: function() {{ return {fingerprint_data.get('languages', [])}; }}
+                }});
+                
+                // Override screen properties
+                Object.defineProperty(screen, 'width', {{
+                    get: function() {{ return {fingerprint_data.get('screen_resolution', '1920x1080').split('x')[0]}; }}
+                }});
+                
+                Object.defineProperty(screen, 'height', {{
+                    get: function() {{ return {fingerprint_data.get('screen_resolution', '1920x1080').split('x')[1]}; }}
+                }});
+                
+                Object.defineProperty(screen, 'colorDepth', {{
+                    get: function() {{ return {fingerprint_data.get('color_depth', 24)}; }}
+                }});
+                
+                // Override device pixel ratio
+                Object.defineProperty(window, 'devicePixelRatio', {{
+                    get: function() {{ return {fingerprint_data.get('pixel_ratio', 1)}; }}
+                }});
+                
+                // Override hardware concurrency
+                Object.defineProperty(navigator, 'hardwareConcurrency', {{
+                    get: function() {{ return {fingerprint_data.get('hardware_concurrency', 4)}; }}
+                }});
+                
+                // Override max touch points
+                Object.defineProperty(navigator, 'maxTouchPoints', {{
+                    get: function() {{ return {fingerprint_data.get('max_touch_points', 0)}; }}
+                }});
+                
+                // Override cookie enabled
+                Object.defineProperty(navigator, 'cookieEnabled', {{
+                    get: function() {{ return {str(fingerprint_data.get('cookie_enabled', True)).lower()}; }}
+                }});
+                
+                // Override do not track
+                Object.defineProperty(navigator, 'doNotTrack', {{
+                    get: function() {{ return {repr(fingerprint_data.get('do_not_track', None))}; }}
+                }});
+            """
+            
+            self.driver.execute_script(js_code)
+            logger.info("Device fingerprint applied successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to apply device fingerprint: {e}")
+            return False
+
+    def capture_manual_fingerprint(self):
+        """Capture fingerprint from manual browser session for reuse in automation"""
+        try:
+            logger.info("Starting manual fingerprint capture...")
+            
+            # Setup Chrome for manual fingerprint capture
+            if not self.setup_chrome():
+                logger.error("Failed to setup Chrome for fingerprint capture")
+                return False
+            
+            # Navigate to ServiceM8 to capture fingerprint
+            self.driver.get("https://go.servicem8.com")
+            time.sleep(3)
+            
+            # Capture comprehensive fingerprint data
+            fingerprint_data = {
+                "user_agent": self.driver.execute_script("return navigator.userAgent"),
+                "platform": self.driver.execute_script("return navigator.platform"),
+                "language": self.driver.execute_script("return navigator.language"),
+                "languages": self.driver.execute_script("return navigator.languages"),
+                "timezone": self.driver.execute_script("return Intl.DateTimeFormat().resolvedOptions().timeZone"),
+                "screen_resolution": self.driver.execute_script("return screen.width + 'x' + screen.height"),
+                "color_depth": self.driver.execute_script("return screen.colorDepth"),
+                "pixel_ratio": self.driver.execute_script("return window.devicePixelRatio"),
+                "webgl_vendor": self.driver.execute_script("""
+                    try {
+                        var canvas = document.createElement('canvas');
+                        var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        return gl ? gl.getParameter(gl.VENDOR) : 'unknown';
+                    } catch(e) { return 'unknown'; }
+                """),
+                "webgl_renderer": self.driver.execute_script("""
+                    try {
+                        var canvas = document.createElement('canvas');
+                        var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        return gl ? gl.getParameter(gl.RENDERER) : 'unknown';
+                    } catch(e) { return 'unknown'; }
+                """),
+                "hardware_concurrency": self.driver.execute_script("return navigator.hardwareConcurrency"),
+                "max_touch_points": self.driver.execute_script("return navigator.maxTouchPoints"),
+                "cookie_enabled": self.driver.execute_script("return navigator.cookieEnabled"),
+                "do_not_track": self.driver.execute_script("return navigator.doNotTrack"),
+                "timestamp": time.time(),
+                "capture_method": "manual"
+            }
+            
+            # Save fingerprint data
+            with open(self.device_fingerprint_file, 'w') as f:
+                json.dump(fingerprint_data, f, indent=2)
+            
+            logger.info("Manual fingerprint captured and saved successfully!")
+            logger.info(f"Fingerprint saved to: {self.device_fingerprint_file}")
+            
+            # Display captured data
+            print("\n" + "="*50)
+            print("CAPTURED FINGERPRINT DATA:")
+            print("="*50)
+            print(f"User Agent: {fingerprint_data['user_agent']}")
+            print(f"Platform: {fingerprint_data['platform']}")
+            print(f"Language: {fingerprint_data['language']}")
+            print(f"Screen Resolution: {fingerprint_data['screen_resolution']}")
+            print(f"Timezone: {fingerprint_data['timezone']}")
+            print(f"WebGL Vendor: {fingerprint_data['webgl_vendor']}")
+            print(f"WebGL Renderer: {fingerprint_data['webgl_renderer']}")
+            print("="*50)
+            print("This fingerprint will be used for automation to avoid 'new location' detection.")
+            print("="*50 + "\n")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to capture manual fingerprint: {e}")
+            return False
+        finally:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+
+    def handle_2fa_authentication(self):
+        """Handle 2FA authentication code input"""
+        try:
+            logger.info("Checking for 2FA authentication page...")
+            
+            # Wait for potential 2FA page to load
+            time.sleep(3)
+            
+            # Check if we're on 2FA page
+            current_url = self.driver.current_url
+            page_source = self.driver.page_source.lower()
+            
+            if "authentication code" in page_source or "enter your authentication" in page_source:
+                logger.info("2FA authentication page detected")
+                self.take_screenshot("2fa_page_detected")
+                
+                if not self.auth_code:
+                    logger.error("2FA authentication code required but AUTH_CODE environment variable not set")
+                    return False
+                
+                # Find and fill the authentication code input
+                auth_code_selectors = [
+                    "input[type='text']",
+                    "input[type='number']", 
+                    "input[name*='code']",
+                    "input[id*='code']",
+                    "input[placeholder*='code']",
+                    "input[placeholder*='digit']"
+                ]
+                
+                auth_input = None
+                for selector in auth_code_selectors:
+                    try:
+                        auth_input = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Found auth code input using selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not auth_input:
+                    logger.error("Could not find authentication code input field")
+                    return False
+                
+                # Clear and enter the authentication code
+                auth_input.clear()
+                auth_input.send_keys(self.auth_code)
+                logger.info("Authentication code entered")
+                
+                # Find and click continue button
+                continue_selectors = [
+                    "button[type='submit']",
+                    "input[type='submit']",
+                    "button:contains('Continue')",
+                    "input[value*='Continue']",
+                    "button:contains('Verify')",
+                    "input[value*='Verify']"
+                ]
+                
+                continue_button = None
+                for selector in continue_selectors:
+                    try:
+                        if ":contains" in selector:
+                            # Use XPath for text-based selectors
+                            xpath_selector = f"//button[contains(text(), '{selector.split(':contains(')[1].split(')')[0]}')]"
+                            continue_button = self.driver.find_element(By.XPATH, xpath_selector)
+                        else:
+                            continue_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        logger.info(f"Found continue button using selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                if not continue_button:
+                    # Try to find any button with continue/verify text
+                    try:
+                        continue_button = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Continue') or contains(text(), 'Verify')]")
+                    except:
+                        pass
+                
+                if continue_button:
+                    continue_button.click()
+                    logger.info("Continue button clicked")
+                    time.sleep(5)
+                    
+                    # Check if 2FA was successful
+                    new_url = self.driver.current_url
+                    if "login" not in new_url.lower() and "servicem8.com" in new_url:
+                        logger.info("2FA authentication successful")
+                        self.take_screenshot("2fa_success")
+                        return True
+                    else:
+                        logger.warning("2FA authentication may have failed")
+                        return False
+                else:
+                    logger.error("Could not find continue/verify button")
+                    return False
+            else:
+                logger.info("No 2FA authentication page detected")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error handling 2FA authentication: {e}")
+            return False
 
     def close_popup(self):
         """Close popup if present"""
@@ -459,11 +834,24 @@ class ServiceM8APIExtractor:
                 
                 time.sleep(5)
                 
+                # Handle 2FA authentication if required
+                if not self.handle_2fa_authentication():
+                    logger.warning("2FA authentication failed")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(5)
+                        continue
+                    else:
+                        return False
+                
                 current_url = self.driver.current_url
                 if "login" not in current_url.lower() and "servicem8.com" in current_url:
                     logger.info("Login successful")
                     # Take screenshot after successful login
                     self.take_screenshot("after_login")
+                    
+                    # Save device fingerprint after successful login to maintain consistent identity
+                    self.save_device_fingerprint()
+                    
                     return True
                 else:
                     logger.warning(f"Login failed on attempt {attempt + 1} - still on login page")
@@ -574,7 +962,7 @@ class ServiceM8APIExtractor:
                         continue
                 
                 if not dispatch_link:
-                    # Try direct URL navigation as fallback
+                    # Try direct URL navigation as fallback (especially useful for server environment)
                     logger.info("No dispatch link found, trying direct URL navigation...")
                     current_url = self.driver.current_url
                     base_url = current_url.split('/')[0] + '//' + current_url.split('/')[2]
@@ -583,6 +971,11 @@ class ServiceM8APIExtractor:
                     try:
                         self.driver.get(dispatch_url)
                         time.sleep(10)
+                        
+                        # Handle potential 2FA on dispatch page
+                        if not self.handle_2fa_authentication():
+                            logger.warning("2FA authentication failed on dispatch page")
+                        
                         current_url = self.driver.current_url
                         if "job_dispatch" in current_url or "dispatch" in current_url.lower():
                             logger.info("Successfully navigated to Dispatch Board via direct URL")
@@ -926,10 +1319,30 @@ def main():
         # Check environment variables
         email = os.getenv("EMAIL")
         password = os.getenv("PASSWORD")
+        auth_code = os.getenv("AUTH_CODE")
+        server_mode = os.getenv("SERVER_MODE", "false").lower() == "true"
+        capture_fingerprint = os.getenv("CAPTURE_FINGERPRINT", "false").lower() == "true"
         
         if not email or not password:
             logger.error("EMAIL and PASSWORD environment variables not found!")
             logger.error("Please create a .env file with your ServiceM8 credentials")
+            return
+        
+        if server_mode:
+            logger.info("Running in SERVER_MODE")
+            if not auth_code:
+                logger.warning("AUTH_CODE not provided - 2FA may fail on server")
+            logger.info("Server mode: Using headless browser with enhanced compatibility")
+        else:
+            logger.info("Running in local mode")
+        
+        if capture_fingerprint:
+            logger.info("CAPTURE_FINGERPRINT mode enabled - will capture fingerprint only")
+            extractor = ServiceM8APIExtractor(max_retries=3)
+            if extractor.capture_manual_fingerprint():
+                logger.info("Fingerprint capture completed successfully!")
+            else:
+                logger.error("Fingerprint capture failed!")
             return
         
         logger.info("Environment variables loaded successfully")
