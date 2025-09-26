@@ -39,7 +39,6 @@ class ServiceM8APIExtractor:
         self.email = os.getenv("EMAIL")
         self.password = os.getenv("PASSWORD")
         self.max_retries = max_retries
-        self.cookies_file = "servicem8_cookies.json"
         self.screenshots_folder = "screenshots"
         self._create_screenshots_folder()
         logger.info("ServiceM8APIExtractor initialized")
@@ -91,7 +90,7 @@ class ServiceM8APIExtractor:
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
-                # options.add_argument("--headless=new")  # Run in headless mode for server
+                options.add_argument("--headless=new")  # Run in headless mode for server
                 options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -322,70 +321,8 @@ class ServiceM8APIExtractor:
         
         return False
 
-    def save_cookies(self):
-        """Save cookies to file for future use"""
-        try:
-            cookies = self.driver.get_cookies()
-            with open(self.cookies_file, 'w') as f:
-                json.dump(cookies, f, indent=2)
-            logger.info(f"Cookies saved to {self.cookies_file}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save cookies: {e}")
-            return False
 
-    def load_cookies(self):
-        """Load cookies from file"""
-        try:
-            if not os.path.exists(self.cookies_file):
-                logger.info("No cookies file found, will need to login")
-                return False
-            
-            with open(self.cookies_file, 'r') as f:
-                cookies = json.load(f)
-            
-            # Load the main page first
-            self.driver.get("https://go.servicem8.com")
-            time.sleep(2)
-            
-            # Add each cookie
-            for cookie in cookies:
-                try:
-                    self.driver.add_cookie(cookie)
-                except Exception as e:
-                    logger.debug(f"Failed to add cookie {cookie.get('name', 'unknown')}: {e}")
-                    continue
-            
-            logger.info(f"Loaded {len(cookies)} cookies from {self.cookies_file}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to load cookies: {e}")
-            return False
 
-    def check_login_status(self):
-        """Check if already logged in using cookies"""
-        try:
-            # Refresh the page to check login status
-            self.driver.refresh()
-            time.sleep(3)
-            
-            current_url = self.driver.current_url
-            page_source = self.driver.page_source.lower()
-            
-            # Check if we're on login page or dashboard
-            if "login" in current_url.lower():
-                logger.info("Still on login page, cookies may be expired")
-                return False
-            elif "servicem8.com" in current_url and "login" not in current_url.lower():
-                logger.info("Successfully logged in using saved cookies")
-                return True
-            else:
-                logger.info("Login status unclear, will try fresh login")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error checking login status: {e}")
-            return False
 
     def close_popup(self):
         """Close popup if present"""
@@ -475,16 +412,7 @@ class ServiceM8APIExtractor:
             return False
 
     def login(self):
-        """Login to ServiceM8 with retry mechanism and cookie support"""
-        # First, try to load saved cookies
-        if self.load_cookies():
-            if self.check_login_status():
-                logger.info("Successfully logged in using saved cookies")
-                return True
-            else:
-                logger.info("Saved cookies are expired, proceeding with fresh login")
-        
-        # If cookies failed, proceed with normal login
+        """Login to ServiceM8 with retry mechanism"""
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"Login attempt {attempt + 1}/{self.max_retries}")
@@ -536,8 +464,6 @@ class ServiceM8APIExtractor:
                     logger.info("Login successful")
                     # Take screenshot after successful login
                     self.take_screenshot("after_login")
-                    # Save cookies for future use
-                    self.save_cookies()
                     return True
                 else:
                     logger.warning(f"Login failed on attempt {attempt + 1} - still on login page")
@@ -895,34 +821,35 @@ class ServiceM8APIExtractor:
             return {}, ""
     
     def create_api_response(self, auth_tokens, cookie_string):
-        """Create the response in the requested format"""
-        api_data = []
+        """Create the response in the requested format with single cookie storage"""
+        api_endpoints = []
         
         # CalendarStoreRequest
         if 'CalendarStoreRequest' in auth_tokens:
-            api_data.append({
+            api_endpoints.append({
                 "url": f"https://go.servicem8.com/CalendarStoreRequest?s_cv=&s_form_values=query-start-limit-_dc-callback-records-xaction-end-id-strJobUUID&s_auth={auth_tokens['CalendarStoreRequest']}",
-                "cookie": cookie_string,
                 "s_auth": auth_tokens['CalendarStoreRequest']
             })
         
         # UpdateReminderForJobActivity
         if 'UpdateReminderForJobActivity' in auth_tokens:
-            api_data.append({
+            api_endpoints.append({
                 "url": f"https://ap-southeast-2.go.servicem8.com/PluginReminders_UpdateReminderForJobActivity?s_form_values=strReminderUUID-strOriginalStartDate-strOriginalEndDate-strOriginalStaffUUID-strNewStartDate-strNewEndDate-strNewStaffUUID-strNewStaffUUIDList-boolModifyAllFollowingRecurrences&s_auth={auth_tokens['UpdateReminderForJobActivity']}",
-                "cookie": cookie_string,
                 "s_auth": auth_tokens['UpdateReminderForJobActivity']
             })
         
         # SaveRecurringJobSchedule
         if 'SaveRecurringJobSchedule' in auth_tokens:
-            api_data.append({
+            api_endpoints.append({
                 "url": f"https://ap-southeast-2.go.servicem8.com/PluginReminders_SaveRecurringJobSchedule?s_form_values=strReminderUUID-strCustomerUUID-strJobTemplateUUID-strAlertMode-strAllocationWindowUUID-strScheduledStartTime-intScheduledDuration-strStaffUUID-strStaffUUIDList-strAlertDescription-strRecurrenceType-strDailyMode-strWeeklyMode-strMonthlyMode-strYearlyMode-intDailyInterval-intWeeklyInterval-intWeeklyWeeksAfterCompletion-arrWeeklyDayNames-intMonthlyDayEveryMonth-intMonthlyDayEveryMonthInterval-strMonthlyMode2WeekType-intMonthlyMode2DayName-intMonthlyMode2MonthInterval-strYearlyMode2WeekType-intYearlyMode1Month-intYearlyMode1Day-intYearlyMode2DayName-intYearlyMode2Month-strPatternStartDate-strPatternEndDateMode-strPatternEndDate-intPatternEndDateOccurrences-boolCancelReminder&s_auth={auth_tokens['SaveRecurringJobSchedule']}",
-                "cookie": cookie_string,
                 "s_auth": auth_tokens['SaveRecurringJobSchedule']
             })
         
-        return api_data
+        # Return structured response with single cookie entry
+        return {
+            "cookie": cookie_string,
+            "api_endpoints": api_endpoints
+        }
     
     def extract(self):
         """Main extraction method with comprehensive error handling"""

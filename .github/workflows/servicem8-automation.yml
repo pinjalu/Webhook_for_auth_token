@@ -29,37 +29,6 @@ jobs:
       with:
         chrome-version: stable
         
-    - name: Install additional Chrome dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          wget \
-          gnupg \
-          unzip \
-          curl \
-          xvfb \
-          libnss3-dev \
-          libatk-bridge2.0-dev \
-          libdrm2 \
-          libxkbcommon0 \
-          libxcomposite1 \
-          libxdamage1 \
-          libxrandr2 \
-          libgbm1 \
-          libxss1 \
-          libasound2t64
-          
-    - name: Verify Chrome installation
-      run: |
-        echo "Chrome version:"
-        google-chrome --version
-        echo "ChromeDriver version:"
-        chromedriver --version
-        echo "Chrome binary location:"
-        which google-chrome
-        echo "ChromeDriver location:"
-        which chromedriver
-        
     - name: Create .env file
       run: |
         echo "EMAIL=${{ secrets.SERVICEM8_EMAIL }}" >> .env
@@ -71,34 +40,18 @@ jobs:
         
     - name: Run ServiceM8 extraction
       run: |
-        # Set display for headless Chrome
-        export DISPLAY=:99
-        # Start virtual display
-        Xvfb :99 -screen 0 1920x1080x24 &
-        sleep 3
+        python main1.py
         
-        # Run the extraction script
-        python main1_copy.py
+    # - name: Send data to webhook
+    #   run: |
+    #     python webhook_test.py
         
-        # Check if screenshots were created
-        if [ -d "screenshots" ]; then
-          echo "Screenshots directory found:"
-          ls -la screenshots/
-        else
-          echo "No screenshots directory found"
-        fi
-        
-    - name: Send data to webhook
-      run: |
-        python webhook_test.py
-        
-    - name: Upload results as artifact (optional)
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: servicem8-results-${{ github.run_number }}
-        path: |
-          result.json
-          servicem8_extractor.log
-          screenshots/
-        retention-days: 7
+    # - name: Upload results as artifact (optional)
+    #   uses: actions/upload-artifact@v4
+    #   if: always()
+    #   with:
+    #     name: servicem8-results-${{ github.run_number }}
+    #     path: |
+    #       result.json
+    #       servicem8_extractor.log
+    #     retention-days: 7
