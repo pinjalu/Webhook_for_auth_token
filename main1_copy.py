@@ -91,15 +91,49 @@ class ServiceM8APIExtractor:
                 options.add_experimental_option('useAutomationExtension', False)
                 options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
                 
-                # Additional stability options
-                options.add_argument("--disable-extensions")
-                options.add_argument("--disable-plugins")
-                options.add_argument("--disable-images")
+                # Server/headless specific options
+                # Check if running in CI/server environment
+                if os.getenv('CI') or os.getenv('GITHUB_ACTIONS') or os.getenv('DISPLAY') is None:
+                    options.add_argument("--headless")  # Run in headless mode for server
+                    logger.info("Running in headless mode (server environment detected)")
+                else:
+                    logger.info("Running in GUI mode (local environment detected)")
                 options.add_argument("--disable-web-security")
                 options.add_argument("--allow-running-insecure-content")
+                options.add_argument("--disable-features=VizDisplayCompositor")
+                options.add_argument("--remote-debugging-port=9222")
                 options.add_argument("--disable-background-timer-throttling")
                 options.add_argument("--disable-backgrounding-occluded-windows")
                 options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-extensions")
+                options.add_argument("--disable-plugins")
+                options.add_argument("--disable-images")
+                # Note: Don't disable JavaScript as ServiceM8 needs it for token extraction
+                options.add_argument("--disable-default-apps")
+                options.add_argument("--disable-sync")
+                options.add_argument("--disable-translate")
+                options.add_argument("--hide-scrollbars")
+                options.add_argument("--mute-audio")
+                options.add_argument("--no-first-run")
+                options.add_argument("--disable-infobars")
+                options.add_argument("--disable-notifications")
+                options.add_argument("--disable-popup-blocking")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-client-side-phishing-detection")
+                options.add_argument("--disable-component-update")
+                options.add_argument("--disable-domain-reliability")
+                options.add_argument("--disable-features=TranslateUI")
+                options.add_argument("--disable-ipc-flooding-protection")
+                options.add_argument("--disable-background-networking")
+                options.add_argument("--disable-background-downloads")
+                options.add_argument("--disable-add-to-shelf")
+                options.add_argument("--disable-component-extensions-with-background-pages")
+                options.add_argument("--metrics-recording-only")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--enable-automation")
+                options.add_argument("--password-store=basic")
+                options.add_argument("--use-mock-keychain")
                 
                 self.driver = webdriver.Chrome(options=options)
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
