@@ -9,6 +9,7 @@ import time
 import os
 import logging
 import random
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -38,7 +39,33 @@ class ServiceM8APIExtractor:
         self.email = os.getenv("EMAIL")
         self.password = os.getenv("PASSWORD")
         self.max_retries = max_retries
+        self.screenshots_dir = "screenshots"
+        self._ensure_screenshots_dir()
         logger.info("ServiceM8APIExtractor initialized")
+    
+    def _ensure_screenshots_dir(self):
+        """Create screenshots directory if it doesn't exist"""
+        if not os.path.exists(self.screenshots_dir):
+            os.makedirs(self.screenshots_dir)
+            logger.info(f"Created screenshots directory: {self.screenshots_dir}")
+    
+    def take_screenshot(self, description="debug"):
+        """Take a screenshot with timestamp and description"""
+        try:
+            if not self.driver:
+                logger.warning("Cannot take screenshot - driver not initialized")
+                return None
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{timestamp}_{description}.png"
+            filepath = os.path.join(self.screenshots_dir, filename)
+            
+            self.driver.save_screenshot(filepath)
+            logger.info(f"Screenshot saved: {filepath}")
+            return filepath
+        except Exception as e:
+            logger.error(f"Failed to take screenshot: {e}")
+            return None
         
     def setup_chrome(self):
         """Setup Chrome with retry mechanism for browser initialization failures"""
@@ -168,6 +195,9 @@ class ServiceM8APIExtractor:
     def close_popup(self):
         """Close popup if present"""
         try:
+            # Take screenshot before popup handling
+            self.take_screenshot("before_popup_handling")
+            
             # Primary selectors for ExtJS close button based on the provided HTML
             primary_selectors = [
                 "//div[@id='ext-gen17']",  # Direct ID selector
@@ -184,6 +214,8 @@ class ServiceM8APIExtractor:
                     action.move_to_element(close_element).click().perform()
                     logger.info(f"Popup closed successfully using selector: {selector}")
                     time.sleep(2)
+                    # Take screenshot after successful popup close
+                    self.take_screenshot("popup_closed_successfully")
                     return True
                 except Exception as e:
                     logger.debug(f"Selector {selector} failed: {e}")
@@ -196,6 +228,8 @@ class ServiceM8APIExtractor:
                 action.move_to_element(close_element).click().perform()
                 logger.info("Popup closed successfully using CSS selector: .x-tool.x-tool-close")
                 time.sleep(2)
+                # Take screenshot after successful popup close
+                self.take_screenshot("popup_closed_successfully")
                 return True
             except Exception as e:
                 logger.debug(f"CSS selector failed: {e}")
@@ -216,6 +250,8 @@ class ServiceM8APIExtractor:
                     action.move_to_element(close_element).click().perform()
                     logger.info(f"Popup closed successfully using fallback selector: {selector}")
                     time.sleep(2)
+                    # Take screenshot after successful popup close
+                    self.take_screenshot("popup_closed_successfully")
                     return True
                 except:
                     continue
@@ -225,15 +261,21 @@ class ServiceM8APIExtractor:
                 self.driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
                 logger.info("Popup closed using Escape key")
                 time.sleep(2)
+                # Take screenshot after escape key
+                self.take_screenshot("popup_closed_with_escape")
                 return True
             except:
                 pass
                 
             logger.debug("No popup close button found")
+            # Take screenshot when no popup found
+            self.take_screenshot("no_popup_found")
             return False
             
         except Exception as e:
             logger.debug(f"Failed to close popup: {e}")
+            # Take screenshot on popup error
+            self.take_screenshot("popup_error")
             return False
 
     def login(self):
@@ -245,11 +287,15 @@ class ServiceM8APIExtractor:
                 # Load website with retry
                 if not self.load_website_with_retry("https://go.servicem8.com"):
                     logger.error("Failed to load ServiceM8 website")
+                    self.take_screenshot("failed_to_load_website")
                     if attempt < self.max_retries - 1:
                         time.sleep(5)
                         continue
                     else:
                         return False
+                
+                # Take screenshot after website loads
+                self.take_screenshot("website_loaded")
                 
                 # Close popup if present (try multiple times)
                 for popup_attempt in range(3):
@@ -257,8 +303,14 @@ class ServiceM8APIExtractor:
                         break
                     time.sleep(1)
                 
+                # Take screenshot after popup handling
+                self.take_screenshot("after_popup_handling")
+                
                 wait = WebDriverWait(self.driver, 15)
                 wait.until(EC.presence_of_element_located((By.ID, "user_email")))
+                
+                # Take screenshot of login form
+                self.take_screenshot("login_form_visible")
                 
                 email_field = self.driver.find_element(By.ID, "user_email")
                 email_field.clear()
@@ -284,12 +336,17 @@ class ServiceM8APIExtractor:
                 
                 time.sleep(5)
                 
+                # Take screenshot after login attempt
+                self.take_screenshot("after_login_attempt")
+                
                 current_url = self.driver.current_url
                 if "login" not in current_url.lower() and "servicem8.com" in current_url:
                     logger.info("Login successful")
+                    self.take_screenshot("login_successful")
                     return True
                 else:
                     logger.warning(f"Login failed on attempt {attempt + 1} - still on login page")
+                    self.take_screenshot("login_failed")
                     if attempt < self.max_retries - 1:
                         logger.info("Waiting 5 seconds before retry...")
                         time.sleep(5)
@@ -298,18 +355,21 @@ class ServiceM8APIExtractor:
                         
             except TimeoutException as e:
                 logger.error(f"Login timeout on attempt {attempt + 1}: {e}")
+                self.take_screenshot("login_timeout")
                 if attempt < self.max_retries - 1:
                     time.sleep(5)
                 else:
                     return False
             except NoSuchElementException as e:
                 logger.error(f"Login element not found on attempt {attempt + 1}: {e}")
+                self.take_screenshot("login_element_not_found")
                 if attempt < self.max_retries - 1:
                     time.sleep(5)
                 else:
                     return False
             except Exception as e:
                 logger.error(f"Login error on attempt {attempt + 1}: {e}")
+                self.take_screenshot("login_error")
                 if attempt < self.max_retries - 1:
                     time.sleep(5)
                 else:
@@ -369,14 +429,23 @@ class ServiceM8APIExtractor:
                 logger.info(f"Navigation to Dispatch Board attempt {attempt + 1}/{self.max_retries}")
                 wait = WebDriverWait(self.driver, 10)
                 
+                # Take screenshot before navigation
+                self.take_screenshot("before_navigation")
+                
                 # Remove any ExtJS masks that might block clicks
                 self.remove_extjs_mask()
                 
                 # Wait for navigation menu to be present
                 nav_menu = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "ThemeMainMenu")))
                 
+                # Take screenshot after menu is found
+                self.take_screenshot("navigation_menu_found")
+                
                 # Wait for dispatch link to be clickable
                 dispatch_link = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'job_dispatch')]")))
+                
+                # Take screenshot after dispatch link is found
+                self.take_screenshot("dispatch_link_found")
                 
                 # Human-like mouse movement to the dispatch link
                 action = ActionChains(self.driver)
@@ -419,13 +488,18 @@ class ServiceM8APIExtractor:
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                 time.sleep(10)
                 
+                # Take screenshot after page load
+                self.take_screenshot("after_page_load")
+                
                 # Verify we're on the dispatch page
                 current_url = self.driver.current_url
                 if "job_dispatch" in current_url or "dispatch" in current_url.lower():
                     logger.info("Successfully navigated to Dispatch Board")
+                    self.take_screenshot("dispatch_board_reached")
                     return True
                 else:
                     logger.warning(f"Navigation may have failed - URL doesn't contain dispatch: {current_url}")
+                    self.take_screenshot("navigation_url_mismatch")
                     if attempt < self.max_retries - 1:
                         logger.info("Waiting 5 seconds before retry...")
                         time.sleep(5)
@@ -435,6 +509,7 @@ class ServiceM8APIExtractor:
                 
             except TimeoutException as e:
                 logger.error(f"Navigation timeout on attempt {attempt + 1}: {e}")
+                self.take_screenshot("navigation_timeout")
                 if attempt < self.max_retries - 1:
                     logger.info("Waiting 5 seconds before retry...")
                     time.sleep(5)
@@ -442,6 +517,7 @@ class ServiceM8APIExtractor:
                     return False
             except NoSuchElementException as e:
                 logger.error(f"Navigation element not found on attempt {attempt + 1}: {e}")
+                self.take_screenshot("navigation_element_not_found")
                 if attempt < self.max_retries - 1:
                     logger.info("Waiting 5 seconds before retry...")
                     time.sleep(5)
@@ -449,6 +525,7 @@ class ServiceM8APIExtractor:
                     return False
             except Exception as e:
                 logger.error(f"Navigation error on attempt {attempt + 1}: {e}")
+                self.take_screenshot("navigation_error")
                 if attempt < self.max_retries - 1:
                     logger.info("Waiting 5 seconds before retry...")
                     time.sleep(5)
@@ -498,6 +575,9 @@ class ServiceM8APIExtractor:
         """Extract API tokens and cookies for specific URLs"""
         try:
             logger.info("Extracting API data...")
+            # Take screenshot before extraction
+            self.take_screenshot("before_token_extraction")
+            
             # JavaScript to find specific API URLs and tokens
             js_code = """
             var apiData = [];
@@ -587,13 +667,22 @@ class ServiceM8APIExtractor:
                 cookie_string += f"{cookie['name']}={cookie['value']}"
             
             logger.info(f"Found {len(result['authTokens'])} auth tokens: {list(result['authTokens'].keys())}")
+            
+            # Take screenshot after extraction
+            if result['authTokens']:
+                self.take_screenshot("tokens_found_successfully")
+            else:
+                self.take_screenshot("no_tokens_found")
+            
             return result['authTokens'], cookie_string
             
         except WebDriverException as e:
             logger.error(f"WebDriver error during API data extraction: {e}")
+            self.take_screenshot("extraction_webdriver_error")
             return {}, ""
         except Exception as e:
             logger.error(f"Error extracting API data: {e}")
+            self.take_screenshot("extraction_error")
             return {}, ""
     
     def create_api_response(self, auth_tokens, cookie_string):
@@ -634,16 +723,19 @@ class ServiceM8APIExtractor:
             # Setup Chrome
             if not self.setup_chrome():
                 logger.error("Failed to setup Chrome browser")
+                self.take_screenshot("chrome_setup_failed")
                 return None
             
             # Login
             if not self.login():
                 logger.error("Failed to login to ServiceM8")
+                self.take_screenshot("login_failed_final")
                 return None
             
             # Navigate to Dispatch Board
             if not self.navigate_to_dispatch():
                 logger.error("Failed to navigate to Dispatch Board")
+                self.take_screenshot("navigation_failed_final")
                 return None
             
             # Extract API data with retry logic
@@ -651,6 +743,7 @@ class ServiceM8APIExtractor:
             
             if not auth_tokens:
                 logger.error("No auth tokens found after all retry attempts")
+                self.take_screenshot("no_tokens_found_final")
                 return None
             
             # Create response
@@ -658,13 +751,16 @@ class ServiceM8APIExtractor:
             
             if api_data:
                 logger.info(f"Successfully extracted {len(api_data)} API endpoints")
+                self.take_screenshot("extraction_completed_successfully")
             else:
                 logger.warning("No API data created from extracted tokens")
+                self.take_screenshot("no_api_data_created")
             
             return api_data
             
         except Exception as e:
             logger.error(f"Critical error in extraction process: {e}")
+            self.take_screenshot("critical_error")
             return None
         finally:
             if self.driver:

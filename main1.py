@@ -9,6 +9,7 @@ import time
 import os
 import logging
 import random
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -39,7 +40,36 @@ class ServiceM8APIExtractor:
         self.password = os.getenv("PASSWORD")
         self.max_retries = max_retries
         self.cookies_file = "servicem8_cookies.json"
+        self.screenshots_folder = "screenshots"
+        self._create_screenshots_folder()
         logger.info("ServiceM8APIExtractor initialized")
+    
+    def _create_screenshots_folder(self):
+        """Create screenshots folder if it doesn't exist"""
+        try:
+            if not os.path.exists(self.screenshots_folder):
+                os.makedirs(self.screenshots_folder)
+                logger.info(f"Screenshots folder created: {self.screenshots_folder}")
+        except Exception as e:
+            logger.warning(f"Failed to create screenshots folder: {e}")
+    
+    def take_screenshot(self, description):
+        """Take a screenshot with timestamp and description"""
+        try:
+            if not self.driver:
+                logger.warning("Cannot take screenshot - driver not initialized")
+                return False
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{timestamp}_{description}.png"
+            filepath = os.path.join(self.screenshots_folder, filename)
+            
+            self.driver.save_screenshot(filepath)
+            logger.info(f"Screenshot saved: {filepath}")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to take screenshot '{description}': {e}")
+            return False
         
     def setup_chrome(self):
         """Setup Chrome with retry mechanism for browser initialization failures"""
@@ -61,7 +91,7 @@ class ServiceM8APIExtractor:
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
-                options.add_argument("--headless=new")  # Run in headless mode for server
+                # options.add_argument("--headless=new")  # Run in headless mode for server
                 options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -371,11 +401,15 @@ class ServiceM8APIExtractor:
             for selector in primary_selectors:
                 try:
                     close_element = self.driver.find_element(By.XPATH, selector)
+                    # Take screenshot before closing popup
+                    self.take_screenshot("before_popup_close")
                     # Use ActionChains for more reliable clicking
                     action = ActionChains(self.driver)
                     action.move_to_element(close_element).click().perform()
                     logger.info(f"Popup closed successfully using selector: {selector}")
                     time.sleep(2)
+                    # Take screenshot after closing popup
+                    self.take_screenshot("after_popup_close")
                     return True
                 except Exception as e:
                     logger.debug(f"Selector {selector} failed: {e}")
@@ -384,10 +418,14 @@ class ServiceM8APIExtractor:
             # Try CSS selector as well
             try:
                 close_element = self.driver.find_element(By.CSS_SELECTOR, ".x-tool.x-tool-close")
+                # Take screenshot before closing popup
+                self.take_screenshot("before_popup_close_css")
                 action = ActionChains(self.driver)
                 action.move_to_element(close_element).click().perform()
                 logger.info("Popup closed successfully using CSS selector: .x-tool.x-tool-close")
                 time.sleep(2)
+                # Take screenshot after closing popup
+                self.take_screenshot("after_popup_close_css")
                 return True
             except Exception as e:
                 logger.debug(f"CSS selector failed: {e}")
@@ -404,19 +442,27 @@ class ServiceM8APIExtractor:
             for selector in fallback_selectors:
                 try:
                     close_element = self.driver.find_element(By.XPATH, selector)
+                    # Take screenshot before closing popup
+                    self.take_screenshot("before_popup_close_fallback")
                     action = ActionChains(self.driver)
                     action.move_to_element(close_element).click().perform()
                     logger.info(f"Popup closed successfully using fallback selector: {selector}")
                     time.sleep(2)
+                    # Take screenshot after closing popup
+                    self.take_screenshot("after_popup_close_fallback")
                     return True
                 except:
                     continue
             
             # If no close button found, try pressing Escape key
             try:
+                # Take screenshot before pressing Escape
+                self.take_screenshot("before_popup_escape")
                 self.driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
                 logger.info("Popup closed using Escape key")
                 time.sleep(2)
+                # Take screenshot after pressing Escape
+                self.take_screenshot("after_popup_escape")
                 return True
             except:
                 pass
@@ -488,6 +534,8 @@ class ServiceM8APIExtractor:
                 current_url = self.driver.current_url
                 if "login" not in current_url.lower() and "servicem8.com" in current_url:
                     logger.info("Login successful")
+                    # Take screenshot after successful login
+                    self.take_screenshot("after_login")
                     # Save cookies for future use
                     self.save_cookies()
                     return True
@@ -612,6 +660,8 @@ class ServiceM8APIExtractor:
                         current_url = self.driver.current_url
                         if "job_dispatch" in current_url or "dispatch" in current_url.lower():
                             logger.info("Successfully navigated to Dispatch Board via direct URL")
+                            # Take screenshot after reaching dispatch board via direct URL
+                            self.take_screenshot("dispatch_board_direct_url")
                             return True
                     except Exception as direct_error:
                         logger.warning(f"Direct URL navigation failed: {direct_error}")
@@ -669,6 +719,8 @@ class ServiceM8APIExtractor:
                 current_url = self.driver.current_url
                 if "job_dispatch" in current_url or "dispatch" in current_url.lower():
                     logger.info("Successfully navigated to Dispatch Board")
+                    # Take screenshot after reaching dispatch board
+                    self.take_screenshot("dispatch_board")
                     return True
                 else:
                     logger.warning(f"Navigation may have failed - URL doesn't contain dispatch: {current_url}")
