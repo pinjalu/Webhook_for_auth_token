@@ -96,14 +96,6 @@ class ServiceM8APIExtractor:
                 # Enable headless mode for server environment
                 if self.is_server:
                     options.add_argument("--headless=new")
-                    options.add_argument("--disable-gpu")
-                    options.add_argument("--no-sandbox")
-                    options.add_argument("--disable-dev-shm-usage")
-                    options.add_argument("--disable-software-rasterizer")
-                    options.add_argument("--disable-background-timer-throttling")
-                    options.add_argument("--disable-backgrounding-occluded-windows")
-                    options.add_argument("--disable-renderer-backgrounding")
-                    options.add_argument("--disable-features=VizDisplayCompositor")
                     logger.info("Running in server mode with headless browser")
                 options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
@@ -277,10 +269,8 @@ class ServiceM8APIExtractor:
                 # Load and apply device fingerprint to maintain consistent identity
                 fingerprint_data = self.load_device_fingerprint()
                 if fingerprint_data:
-                    if self.apply_device_fingerprint(fingerprint_data):
-                        logger.info("Applied existing device fingerprint to avoid 'new location' detection")
-                    else:
-                        logger.warning("Failed to apply device fingerprint, continuing without it")
+                    self.apply_device_fingerprint(fingerprint_data)
+                    logger.info("Applied existing device fingerprint to avoid 'new location' detection")
                 else:
                     logger.info("No existing fingerprint found, will create new one after first successful login")
                 
@@ -370,7 +360,7 @@ class ServiceM8APIExtractor:
                     logger.error("Failed to load website after all retry attempts")
                     return False
         
-            return False
+        return False
 
     def save_device_fingerprint(self):
         """Save device fingerprint to maintain consistent identity"""
@@ -445,10 +435,6 @@ class ServiceM8APIExtractor:
             if not fingerprint_data or not self.driver:
                 return False
             
-            # Navigate to a page first to ensure JavaScript context is available
-            self.driver.get("about:blank")
-            time.sleep(1)
-            
             # Apply fingerprint data using JavaScript
             js_code = f"""
                 // Override navigator properties
@@ -485,33 +471,13 @@ class ServiceM8APIExtractor:
                 Object.defineProperty(window, 'devicePixelRatio', {{
                     get: function() {{ return {fingerprint_data.get('pixel_ratio', 1)}; }}
                 }});
-                
-                // Override hardware concurrency
-                Object.defineProperty(navigator, 'hardwareConcurrency', {{
-                    get: function() {{ return {fingerprint_data.get('hardware_concurrency', 4)}; }}
-                }});
-                
-                // Override max touch points
-                Object.defineProperty(navigator, 'maxTouchPoints', {{
-                    get: function() {{ return {fingerprint_data.get('max_touch_points', 0)}; }}
-                }});
-                
-                // Override cookie enabled
-                Object.defineProperty(navigator, 'cookieEnabled', {{
-                    get: function() {{ return {str(fingerprint_data.get('cookie_enabled', True)).lower()}; }}
-                }});
-                
-                // Override do not track
-                Object.defineProperty(navigator, 'doNotTrack', {{
-                    get: function() {{ return {repr(fingerprint_data.get('do_not_track', None))}; }}
-                }});
             """
             
             self.driver.execute_script(js_code)
             logger.info("Device fingerprint applied successfully")
             return True
             
-        except Exception as e:
+                except Exception as e:
             logger.error(f"Failed to apply device fingerprint: {e}")
             return False
 
@@ -613,7 +579,7 @@ class ServiceM8APIExtractor:
                 
                 if not self.auth_code:
                     logger.error("2FA authentication code required but AUTH_CODE environment variable not set")
-                    return False
+                return False
                 
                 # Find and fill the authentication code input
                 auth_code_selectors = [
@@ -684,10 +650,10 @@ class ServiceM8APIExtractor:
                     if "login" not in new_url.lower() and "servicem8.com" in new_url:
                         logger.info("2FA authentication successful")
                         self.take_screenshot("2fa_success")
-                        return True
-                    else:
+                return True
+            else:
                         logger.warning("2FA authentication may have failed")
-                        return False
+                return False
                 else:
                     logger.error("Could not find continue/verify button")
                     return False
@@ -1332,7 +1298,6 @@ def main():
             logger.info("Running in SERVER_MODE")
             if not auth_code:
                 logger.warning("AUTH_CODE not provided - 2FA may fail on server")
-            logger.info("Server mode: Using headless browser with enhanced compatibility")
         else:
             logger.info("Running in local mode")
         

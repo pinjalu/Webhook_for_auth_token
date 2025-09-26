@@ -40,7 +40,7 @@ jobs:
         
     - name: Run ServiceM8 extraction
       run: |
-        python main1.py
+        python main4.py
         
     # - name: Send data to webhook
     #   run: |
