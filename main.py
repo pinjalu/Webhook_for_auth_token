@@ -8,6 +8,7 @@ import json
 import time
 import os
 import logging
+import random
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -15,7 +16,52 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 from dotenv import load_dotenv
+
+def human_type(driver, element, text):
+    """Type text like a human with variable delays and occasional mistakes"""
+    # Move mouse to element with natural motion
+    action = ActionChains(driver)
+    action.move_to_element(element).perform()
+    time.sleep(random.uniform(0.5, 1.0))
+    
+    # Click the element
+    element.click()
+    time.sleep(random.uniform(0.1, 0.3))
+    
+    # Clear existing text with natural pause
+    element.clear()
+    time.sleep(random.uniform(0.2, 0.5))
+    
+    # Type each character with human-like delays
+    for i, char in enumerate(text):
+        # Base typing delay
+        delay = random.uniform(0.1, 0.3)
+        
+        # Add longer pauses for special cases
+        if i > 0:
+            prev_char = text[i-1]
+            # Longer delay after dots, @, or when switching between numbers and letters
+            if (prev_char in '.@' or 
+                (prev_char.isalpha() and char.isdigit()) or 
+                (prev_char.isdigit() and char.isalpha())):
+                delay += random.uniform(0.3, 0.5)
+        
+        # Occasionally simulate a typo (1% chance)
+        if random.random() < 0.01:
+            # Type a wrong character
+            wrong_char = random.choice('abcdefghijklmnopqrstuvwxyz')
+            element.send_keys(wrong_char)
+            time.sleep(random.uniform(0.1, 0.3))
+            # Delete the wrong character
+            element.send_keys(Keys.BACKSPACE)
+            time.sleep(random.uniform(0.1, 0.3))
+        
+        # Type the correct character
+        element.send_keys(char)
+        time.sleep(delay)
 
 load_dotenv()
 
@@ -89,8 +135,8 @@ class ServiceM8APIExtractor:
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
                 
-                # Enhanced stealth settings for GitHub Actions
-                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                # Enhanced anti-detection settings with modern user agent
+                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0")
                 options.add_argument("--disable-web-security")
                 options.add_argument("--allow-running-insecure-content")
                 options.add_argument("--disable-features=VizDisplayCompositor")
@@ -100,6 +146,26 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-renderer-backgrounding")
                 options.add_argument("--disable-field-trial-config")
                 options.add_argument("--disable-ipc-flooding-protection")
+                
+                # Additional anti-bot detection arguments
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                options.add_argument("--disable-features=VizDisplayCompositor")
+                options.add_argument("--disable-default-apps")
+                options.add_argument("--disable-extensions-file-access-check")
+                options.add_argument("--disable-extensions-http-throttling")
+                options.add_argument("--disable-extensions-except=")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-sync")
+                options.add_argument("--disable-translate")
+                options.add_argument("--hide-scrollbars")
+                options.add_argument("--mute-audio")
+                options.add_argument("--no-first-run")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--ignore-certificate-errors")
+                options.add_argument("--ignore-ssl-errors")
+                options.add_argument("--ignore-certificate-errors-spki-list")
+                options.add_argument("--ignore-certificate-errors-skip-list")
                 
                 # Set additional preferences to avoid detection
                 prefs = {
@@ -126,17 +192,109 @@ class ServiceM8APIExtractor:
                 
                 self.driver = webdriver.Chrome(options=options)
                 
-                # Enhanced stealth JavaScript for GitHub Actions
+                # Advanced stealth JavaScript to avoid bot detection
                 stealth_js = """
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-                Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})});
-                window.chrome = {runtime: {}};
-                Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 1});
-                Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
-                Object.defineProperty(navigator, 'productSub', {get: () => '20030107'});
-                Object.defineProperty(navigator, 'vendorSub', {get: () => ''});
+                // Remove webdriver property and add custom behavior
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => false,
+                    configurable: true
+                });
+                
+                // Randomized plugins array
+                const plugins = [
+                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+                    {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''},
+                    {name: 'Widevine Content Decryption Module', filename: 'widevinecdmadapter.dll', description: 'Enables Widevine licenses for playback of HTML audio/video content.'}
+                ];
+                
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => {
+                        const numPlugins = Math.floor(Math.random() * 2) + 3; // 3-4 plugins
+                        return plugins.slice(0, numPlugins);
+                    }
+                });
+                
+                // Randomized navigator properties based on user agent
+                const userAgent = navigator.userAgent.toLowerCase();
+                const isMac = userAgent.includes('macintosh');
+                const isWindows = userAgent.includes('windows');
+                const isChrome = userAgent.includes('chrome');
+                const isFirefox = userAgent.includes('firefox');
+                
+                Object.defineProperty(navigator, 'platform', {
+                    get: () => isMac ? 'MacIntel' : (isWindows ? 'Win32' : 'Linux x86_64')
+                });
+                
+                // Randomized hardware properties
+                Object.defineProperty(navigator, 'hardwareConcurrency', {
+                    get: () => Math.pow(2, Math.floor(Math.random() * 3) + 2) // 4, 8, or 16
+                });
+                
+                Object.defineProperty(navigator, 'deviceMemory', {
+                    get: () => Math.pow(2, Math.floor(Math.random() * 4) + 3) // 8, 16, 32, or 64
+                });
+                
+                // Browser-specific properties
+                Object.defineProperty(navigator, 'vendor', {
+                    get: () => isChrome ? 'Google Inc.' : ''
+                });
+                
+                Object.defineProperty(navigator, 'productSub', {
+                    get: () => isChrome ? '20030107' : '20100101'
+                });
+                
+                Object.defineProperty(navigator, 'maxTouchPoints', {
+                    get: () => Math.floor(Math.random() * 2) // 0 or 1
+                });
+                
+                // Add random touch support
+                if (Math.random() > 0.5) {
+                    window.ontouchstart = function(){};
+                }
+                
+                // Mock permissions
+                Object.defineProperty(navigator, 'permissions', {
+                    get: () => ({
+                        query: () => Promise.resolve({state: 'granted'})
+                    })
+                });
+                
+                // Add chrome runtime
+                window.chrome = {
+                    runtime: {
+                        onConnect: undefined,
+                        onMessage: undefined
+                    }
+                };
+                
+                // Remove automation indicators
+                delete navigator.__proto__.webdriver;
+                
+                // Mock screen properties
+                Object.defineProperty(screen, 'availWidth', {get: () => 1920});
+                Object.defineProperty(screen, 'availHeight', {get: () => 1040});
+                Object.defineProperty(screen, 'width', {get: () => 1920});
+                Object.defineProperty(screen, 'height', {get: () => 1080});
+                Object.defineProperty(screen, 'colorDepth', {get: () => 24});
+                Object.defineProperty(screen, 'pixelDepth', {get: () => 24});
+                
+                // Mock WebGL properties
+                const getParameter = WebGLRenderingContext.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) {
+                        return 'Intel Inc.';
+                    }
+                    if (parameter === 37446) {
+                        return 'Intel(R) Iris(TM) Graphics 6100';
+                    }
+                    return getParameter(parameter);
+                };
+                
+                // Hide automation flags
+                ['__webdriver_evaluate', '__selenium_evaluate', '__webdriver_script_function', '__webdriver_script_func', '__webdriver_script_fn', '__fxdriver_evaluate', '__driver_unwrapped', '__webdriver_unwrapped', '__driver_evaluate', '__selenium_unwrapped', '__fxdriver_unwrapped'].forEach(prop => {
+                    delete window[prop];
+                });
                 """
                 self.driver.execute_script(stealth_js)
                 
@@ -246,33 +404,35 @@ class ServiceM8APIExtractor:
                 wait = WebDriverWait(self.driver, 15)
                 wait.until(EC.presence_of_element_located((By.ID, "user_email")))
                 
-                # Human-like typing delays
+                # Find login form elements
                 email_field = self.driver.find_element(By.ID, "user_email")
-                email_field.clear()
-                time.sleep(1)  # Wait after clearing
-                
-                # Type email slowly like a human
-                for char in self.email:
-                    email_field.send_keys(char)
-                    time.sleep(0.1)  # Small delay between keystrokes
-                
-                time.sleep(2)  # Pause between fields
-                
                 password_field = self.driver.find_element(By.ID, "user_password")
-                password_field.clear()
-                time.sleep(1)
-                
-                # Type password slowly like a human
-                for char in self.password:
-                    password_field.send_keys(char)
-                    time.sleep(0.1)
-                
-                time.sleep(2)  # Pause before clicking submit
-                
                 submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                # Move to button first (human-like behavior)
-                self.driver.execute_script("arguments[0].scrollIntoView();", submit_button)
-                time.sleep(1)
+
+                # Type email with human-like behavior
+                human_type(self.driver, email_field, self.email)
+                
+                # Natural pause between fields (like a human thinking/moving to next field)
+                time.sleep(random.uniform(0.8, 2.0))
+                
+                # Type password with human-like behavior
+                human_type(self.driver, password_field, self.password)
+                
+                # Natural pause before clicking submit (like a human reviewing their input)
+                time.sleep(random.uniform(1.0, 2.0))
+                
+                # Move to and click submit button naturally
+                action = ActionChains(self.driver)
+                action.move_to_element(submit_button).perform()
+                time.sleep(random.uniform(0.3, 0.7))
+                
+                # Sometimes move mouse slightly before clicking (more human-like)
+                if random.random() < 0.3:
+                    action.move_by_offset(random.randint(-5, 5), random.randint(-5, 5)).perform()
+                    time.sleep(random.uniform(0.1, 0.3))
+                    action.move_to_element(submit_button).perform()
+                    time.sleep(random.uniform(0.1, 0.3))
+                
                 submit_button.click()
                 
                 time.sleep(5)
