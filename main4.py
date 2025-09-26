@@ -262,6 +262,9 @@ class ServiceM8APIExtractor:
                 
                 options = Options()
                 
+                # Load and apply device fingerprint
+                fingerprint_data = self.load_device_fingerprint()
+                
                 # Server-specific options - try different approaches based on attempt
                 is_server = self.is_server_environment()
                 
@@ -287,15 +290,24 @@ class ServiceM8APIExtractor:
                         logger.info("Local environment - attempting without user-data-dir")
                         # Don't add user-data-dir for retry attempts
                 
+                # Apply device fingerprint to Chrome options
+                self.apply_device_fingerprint(options, fingerprint_data)
+                
                 # Essential server options
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
-                options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
-                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+                
+                # Use fingerprint user agent if available, otherwise use default
+                if not fingerprint_data or 'user_agent' not in fingerprint_data:
+                    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+                
+                # Use fingerprint window size if available, otherwise use default
+                if not fingerprint_data or 'screen_resolution' not in fingerprint_data:
+                    options.add_argument("--window-size=1920,1080")
                 
                 # Additional stability options
                 options.add_argument("--disable-extensions")
@@ -307,25 +319,49 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-backgrounding-occluded-windows")
                 options.add_argument("--disable-renderer-backgrounding")
                 
-                # Server-specific additional options
-                options.add_argument("--disable-software-rasterizer")
+                # Location and privacy options to avoid detection
+                options.add_argument("--disable-geolocation")
+                options.add_argument("--disable-location-history")
+                options.add_argument("--disable-notifications")
+                options.add_argument("--disable-popup-blocking")
+                options.add_argument("--disable-translate")
+                options.add_argument("--disable-sync")
                 options.add_argument("--disable-background-networking")
                 options.add_argument("--disable-default-apps")
-                options.add_argument("--disable-sync")
-                options.add_argument("--disable-translate")
-                options.add_argument("--hide-scrollbars")
-                options.add_argument("--metrics-recording-only")
-                options.add_argument("--mute-audio")
-                options.add_argument("--no-first-run")
-                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--disable-component-extensions-with-background-pages")
+                
+                # Additional anti-detection measures
+                options.add_argument("--disable-features=VizDisplayCompositor")
                 options.add_argument("--disable-ipc-flooding-protection")
                 options.add_argument("--disable-hang-monitor")
                 options.add_argument("--disable-prompt-on-repost")
                 options.add_argument("--disable-domain-reliability")
                 options.add_argument("--disable-features=TranslateUI")
-                options.add_argument("--disable-component-extensions-with-background-pages")
+                options.add_argument("--disable-component-update")
+                options.add_argument("--disable-client-side-phishing-detection")
+                options.add_argument("--disable-sync-preferences")
+                options.add_argument("--disable-sync-app-list")
+                options.add_argument("--disable-sync-app-settings")
+                options.add_argument("--disable-sync-autofill")
+                options.add_argument("--disable-sync-bookmarks")
+                options.add_argument("--disable-sync-extensions")
+                options.add_argument("--disable-sync-history")
+                options.add_argument("--disable-sync-passwords")
+                options.add_argument("--disable-sync-preferences")
+                options.add_argument("--disable-sync-sessions")
+                options.add_argument("--disable-sync-tabs")
+                options.add_argument("--disable-sync-themes")
+                options.add_argument("--disable-sync-typed-urls")
                 
-                # Download preferences
+                # Server-specific additional options
+                options.add_argument("--disable-software-rasterizer")
+                options.add_argument("--hide-scrollbars")
+                options.add_argument("--metrics-recording-only")
+                options.add_argument("--mute-audio")
+                options.add_argument("--no-first-run")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                
+                # Download preferences and local environment settings
                 prefs = {
                     "download.default_directory": self.download_dir,
                     "download.prompt_for_download": False,
@@ -334,7 +370,59 @@ class ServiceM8APIExtractor:
                     "safebrowsing.disable_download_protection": True,
                     "profile.default_content_settings.popups": 0,
                     "profile.default_content_setting_values.notifications": 2,
-                    "profile.managed_default_content_settings.images": 2
+                    "profile.managed_default_content_settings.images": 2,
+                    # Location and privacy settings to match local environment
+                    "profile.default_content_setting_values.geolocation": 2,  # Block geolocation
+                    "profile.default_content_setting_values.media_stream": 2,  # Block media access
+                    "profile.default_content_setting_values.camera": 2,  # Block camera
+                    "profile.default_content_setting_values.microphone": 2,  # Block microphone
+                    "profile.default_content_setting_values.plugins": 1,  # Allow plugins
+                    "profile.default_content_setting_values.popups": 0,  # Allow popups
+                    "profile.default_content_setting_values.automatic_downloads": 1,  # Allow downloads
+                    # Disable location services
+                    "profile.default_content_setting_values.location": 2,
+                    # Disable background sync
+                    "profile.default_content_setting_values.background_sync": 2,
+                    # Disable payment handler
+                    "profile.default_content_setting_values.payment_handler": 2,
+                    # Disable sensors
+                    "profile.default_content_setting_values.sensors": 2,
+                    # Disable serial
+                    "profile.default_content_setting_values.serial": 2,
+                    # Disable usb
+                    "profile.default_content_setting_values.usb": 2,
+                    # Disable clipboard
+                    "profile.default_content_setting_values.clipboard": 2,
+                    # Disable midi
+                    "profile.default_content_setting_values.midi": 2,
+                    # Disable hid
+                    "profile.default_content_setting_values.hid": 2,
+                    # Disable file system
+                    "profile.default_content_setting_values.file_system": 2,
+                    # Disable bluetooth
+                    "profile.default_content_setting_values.bluetooth": 2,
+                    # Disable nfc
+                    "profile.default_content_setting_values.nfc": 2,
+                    # Disable vr
+                    "profile.default_content_setting_values.vr": 2,
+                    # Disable ar
+                    "profile.default_content_setting_values.ar": 2,
+                    # Disable window placement
+                    "profile.default_content_setting_values.window_placement": 2,
+                    # Disable local fonts
+                    "profile.default_content_setting_values.local_fonts": 2,
+                    # Disable idle detection
+                    "profile.default_content_setting_values.idle_detection": 2,
+                    # Disable storage access
+                    "profile.default_content_setting_values.storage_access": 2,
+                    # Disable top frame navigation
+                    "profile.default_content_setting_values.top_frame_navigation": 2,
+                    # Disable web share
+                    "profile.default_content_setting_values.web_share": 2,
+                    # Disable web authentication
+                    "profile.default_content_setting_values.web_authentication": 2,
+                    # Disable web payment
+                    "profile.default_content_setting_values.web_payment": 2
                 }
                 options.add_experimental_option("prefs", prefs)
                 
@@ -348,6 +436,10 @@ class ServiceM8APIExtractor:
                     self.driver = webdriver.Chrome(options=options)
                 
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                # Apply additional fingerprint settings after browser starts
+                if fingerprint_data:
+                    self.apply_fingerprint_after_start(fingerprint_data)
                 
                 # Test if browser is working
                 self.driver.get("about:blank")
@@ -370,6 +462,137 @@ class ServiceM8APIExtractor:
                     return False
         
         return False
+    
+    def load_device_fingerprint(self):
+        """Load device fingerprint from file"""
+        try:
+            fingerprint_file = "device_fingerprint.json"
+            if not os.path.exists(fingerprint_file):
+                logger.info("No device fingerprint file found")
+                return None
+            
+            with open(fingerprint_file, 'r') as f:
+                fingerprint_data = json.load(f)
+            
+            logger.info("Loaded device fingerprint successfully")
+            return fingerprint_data
+            
+        except Exception as e:
+            logger.warning(f"Failed to load device fingerprint: {e}")
+            return None
+    
+    def apply_device_fingerprint(self, options, fingerprint_data):
+        """Apply device fingerprint to Chrome options"""
+        if not fingerprint_data:
+            return
+        
+        try:
+            # Apply user agent
+            if 'user_agent' in fingerprint_data:
+                options.add_argument(f"--user-agent={fingerprint_data['user_agent']}")
+                logger.info(f"Applied user agent: {fingerprint_data['user_agent']}")
+            
+            # Apply screen resolution
+            if 'screen_resolution' in fingerprint_data:
+                options.add_argument(f"--window-size={fingerprint_data['screen_resolution']}")
+                logger.info(f"Applied screen resolution: {fingerprint_data['screen_resolution']}")
+            
+            # Apply language settings
+            if 'language' in fingerprint_data:
+                options.add_argument(f"--lang={fingerprint_data['language']}")
+                logger.info(f"Applied language: {fingerprint_data['language']}")
+            
+            # Apply timezone
+            if 'timezone' in fingerprint_data:
+                options.add_argument(f"--timezone={fingerprint_data['timezone']}")
+                logger.info(f"Applied timezone: {fingerprint_data['timezone']}")
+            
+            logger.info("Applied existing device fingerprint to Chrome options")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply device fingerprint: {e}")
+    
+    def apply_fingerprint_after_start(self, fingerprint_data):
+        """Apply additional fingerprint settings after browser starts"""
+        try:
+            # Override navigator properties to match fingerprint
+            js_code = f"""
+            // Override navigator properties
+            Object.defineProperty(navigator, 'platform', {{
+                get: () => '{fingerprint_data.get('platform', 'Win32')}'
+            }});
+            
+            Object.defineProperty(navigator, 'language', {{
+                get: () => '{fingerprint_data.get('language', 'en-AU')}'
+            }});
+            
+            Object.defineProperty(navigator, 'languages', {{
+                get: () => {json.dumps(fingerprint_data.get('languages', ['en-AU', 'en;q=0.9']))}
+            }});
+            
+            Object.defineProperty(navigator, 'hardwareConcurrency', {{
+                get: () => {fingerprint_data.get('hardware_concurrency', 8)}
+            }});
+            
+            Object.defineProperty(navigator, 'maxTouchPoints', {{
+                get: () => {fingerprint_data.get('max_touch_points', 0)}
+            }});
+            
+            Object.defineProperty(navigator, 'cookieEnabled', {{
+                get: () => {str(fingerprint_data.get('cookie_enabled', True)).lower()}
+            }});
+            
+            Object.defineProperty(navigator, 'doNotTrack', {{
+                get: () => '{fingerprint_data.get('do_not_track', '1')}'
+            }});
+            
+            // Override screen properties
+            Object.defineProperty(screen, 'width', {{
+                get: () => {fingerprint_data.get('screen_resolution', '1920x1080').split('x')[0]}
+            }});
+            
+            Object.defineProperty(screen, 'height', {{
+                get: () => {fingerprint_data.get('screen_resolution', '1920x1080').split('x')[1]}
+            }});
+            
+            Object.defineProperty(screen, 'colorDepth', {{
+                get: () => {fingerprint_data.get('color_depth', 24)}
+            }});
+            
+            Object.defineProperty(window, 'devicePixelRatio', {{
+                get: () => {fingerprint_data.get('pixel_ratio', 1)}
+            }});
+            
+            // Override timezone
+            Object.defineProperty(Intl.DateTimeFormat.prototype, 'resolvedOptions', {{
+                value: function() {{
+                    return {{
+                        timeZone: '{fingerprint_data.get('timezone', 'Asia/Calcutta')}',
+                        locale: '{fingerprint_data.get('language', 'en-AU')}'
+                    }};
+                }}
+            }});
+            
+            // Override WebGL properties if available
+            if (fingerprint_data.get('webgl_vendor') && fingerprint_data.get('webgl_vendor') !== 'unknown') {{
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {{
+                    if (parameter === 37445) {{ // VENDOR
+                        return '{fingerprint_data.get('webgl_vendor', '')}';
+                    }}
+                    if (parameter === 37446) {{ // RENDERER
+                        return '{fingerprint_data.get('webgl_renderer', '')}';
+                    }}
+                    return getParameter.call(this, parameter);
+                }};
+            }}
+            """
+            
+            self.driver.execute_script(js_code)
+            logger.info("Applied additional fingerprint settings after browser start")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply fingerprint after start: {e}")
     
     def is_server_environment(self):
         """Detect if running in a server environment"""
@@ -958,17 +1181,7 @@ def main():
             logger.info("Extraction completed successfully!")
             logger.info(f"Found {len(result)} API endpoints")
             
-            # Example: Download files if needed
-            # You can add download functionality here
-            # Example usage:
-            # download_url = "https://example.com/file.pdf"
-            # if extractor.download_file(download_url, "downloaded_file.pdf"):
-            #     logger.info("File downloaded successfully")
-            #     downloaded_files = extractor.get_downloaded_files()
-            #     logger.info(f"Downloaded files: {[f['name'] for f in downloaded_files]}")
             
-            # Uncomment the next line if you want to print results to console
-            # print(json.dumps(result, indent=2))
         else:
             logger.error("Extraction failed - no data retrieved")
             
