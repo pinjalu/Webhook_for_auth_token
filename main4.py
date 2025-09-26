@@ -8,6 +8,9 @@ import json
 import time
 import os
 import logging
+import tempfile
+import shutil
+import uuid
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -41,6 +44,7 @@ class ServiceM8APIExtractor:
         self.max_retries = max_retries
         self.cookies_file = "servicem8_cookies.json"
         self.download_dir = download_dir or os.path.join(os.getcwd(), "downloads")
+        self.temp_user_data_dir = None
         logger.info("ServiceM8APIExtractor initialized")
         
     def save_cookies(self):
@@ -230,7 +234,7 @@ class ServiceM8APIExtractor:
             try:
                 logger.info(f"Chrome browser setup attempt {attempt + 1}/{self.max_retries}")
                 
-                # Clean up any existing driver instance
+                # Clean up any existing driver instance and temp directory
                 if self.driver:
                     try:
                         self.driver.quit()
@@ -238,15 +242,30 @@ class ServiceM8APIExtractor:
                         pass
                     self.driver = None
                 
+                # Clean up previous temp user data directory
+                if self.temp_user_data_dir and os.path.exists(self.temp_user_data_dir):
+                    try:
+                        shutil.rmtree(self.temp_user_data_dir)
+                        logger.info(f"Cleaned up previous temp user data directory: {self.temp_user_data_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temp user data directory: {e}")
+                
                 # Create download directory if it doesn't exist
                 if not os.path.exists(self.download_dir):
                     os.makedirs(self.download_dir)
                     logger.info(f"Created download directory: {self.download_dir}")
                 
+                # Create unique temporary user data directory
+                self.temp_user_data_dir = os.path.join(tempfile.gettempdir(), f"chrome_user_data_{uuid.uuid4().hex[:8]}")
+                os.makedirs(self.temp_user_data_dir, exist_ok=True)
+                logger.info(f"Created temporary user data directory: {self.temp_user_data_dir}")
+                
                 options = Options()
                 # try with headless first
                 # options.add_argument("--headless=new")   # modern headless mode
 
+                # Add unique user data directory to prevent conflicts
+                options.add_argument(f"--user-data-dir={self.temp_user_data_dir}")
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
@@ -822,6 +841,14 @@ class ServiceM8APIExtractor:
                     self.driver.quit()
                 except Exception as e:
                     logger.warning(f"Error closing browser: {e}")
+            
+            # Clean up temporary user data directory
+            if self.temp_user_data_dir and os.path.exists(self.temp_user_data_dir):
+                try:
+                    shutil.rmtree(self.temp_user_data_dir)
+                    logger.info(f"Cleaned up temporary user data directory: {self.temp_user_data_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary user data directory: {e}")
 
 def main():
     """Main function with comprehensive error handling"""
