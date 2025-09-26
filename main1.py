@@ -56,16 +56,27 @@ class ServiceM8APIExtractor:
                     self.driver = None
                 
                 options = Options()
+                
+                # Server-specific options to prevent user data directory conflicts
+                import tempfile
+                import uuid
+                temp_dir = tempfile.mkdtemp()
+                unique_id = str(uuid.uuid4())[:8]
+                user_data_dir = f"{temp_dir}/chrome_user_data_{unique_id}"
+                
+                options.add_argument(f"--user-data-dir={user_data_dir}")
+                self.user_data_dir = user_data_dir  # Store for cleanup
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
+                options.add_argument("--headless=new")  # Run in headless mode for server
                 options.add_argument("--window-size=1920,1080")
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
                 options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
                 
-                # Additional stability options
+                # Additional stability options for server environment
                 options.add_argument("--disable-extensions")
                 options.add_argument("--disable-plugins")
                 options.add_argument("--disable-images")
@@ -74,6 +85,63 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-background-timer-throttling")
                 options.add_argument("--disable-backgrounding-occluded-windows")
                 options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-logging")
+                options.add_argument("--disable-default-apps")
+                options.add_argument("--disable-sync")
+                options.add_argument("--disable-translate")
+                options.add_argument("--hide-scrollbars")
+                options.add_argument("--mute-audio")
+                options.add_argument("--no-first-run")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-client-side-phishing-detection")
+                options.add_argument("--disable-component-update")
+                options.add_argument("--disable-domain-reliability")
+                options.add_argument("--disable-features=TranslateUI")
+                options.add_argument("--disable-ipc-flooding-protection")
+                options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-backgrounding-occluded-windows")
+                options.add_argument("--disable-background-timer-throttling")
+                options.add_argument("--disable-features=VizDisplayCompositor")
+                options.add_argument("--disable-field-trial-config")
+                options.add_argument("--disable-back-forward-cache")
+                options.add_argument("--disable-background-networking")
+                options.add_argument("--disable-breakpad")
+                options.add_argument("--disable-component-extensions-with-background-pages")
+                options.add_argument("--disable-extensions-file-access-check")
+                options.add_argument("--disable-extensions-http-throttling")
+                options.add_argument("--disable-features=TranslateUI,BlinkGenPropertyTrees")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-ipc-flooding-protection")
+                options.add_argument("--disable-popup-blocking")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-sync")
+                options.add_argument("--force-color-profile=srgb")
+                options.add_argument("--metrics-recording-only")
+                options.add_argument("--no-first-run")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--enable-automation")
+                options.add_argument("--password-store=basic")
+                options.add_argument("--use-mock-keychain")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument("--disable-gpu-sandbox")
+                options.add_argument("--disable-software-rasterizer")
+                options.add_argument("--disable-background-timer-throttling")
+                options.add_argument("--disable-backgrounding-occluded-windows")
+                options.add_argument("--disable-renderer-backgrounding")
+                options.add_argument("--disable-features=TranslateUI")
+                options.add_argument("--disable-ipc-flooding-protection")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-sync")
+                options.add_argument("--force-color-profile=srgb")
+                options.add_argument("--metrics-recording-only")
+                options.add_argument("--no-first-run")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--enable-automation")
+                options.add_argument("--password-store=basic")
+                options.add_argument("--use-mock-keychain")
                 
                 self.driver = webdriver.Chrome(options=options)
                 self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -750,6 +818,15 @@ class ServiceM8APIExtractor:
                     self.driver.quit()
                 except Exception as e:
                     logger.warning(f"Error closing browser: {e}")
+            
+            # Clean up temporary user data directory
+            try:
+                import shutil
+                if hasattr(self, 'user_data_dir') and os.path.exists(self.user_data_dir):
+                    shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                    logger.info("Cleaned up temporary user data directory")
+            except Exception as e:
+                logger.debug(f"Failed to clean up user data directory: {e}")
 
 def main():
     """Main function with comprehensive error handling"""
