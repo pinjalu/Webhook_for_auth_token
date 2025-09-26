@@ -22,23 +22,10 @@ from dotenv import load_dotenv
 
 def human_type(driver, element, text):
     """Type text like a human with variable delays and occasional mistakes"""
-    # Move mouse to element with natural motion
-    action = ActionChains(driver)
-    action.move_to_element(element).perform()
-    time.sleep(random.uniform(0.5, 1.0))
-    
-    # Click the element
-    element.click()
-    time.sleep(random.uniform(0.1, 0.3))
-    
-    # Clear existing text with natural pause
-    element.clear()
-    time.sleep(random.uniform(0.2, 0.5))
-    
     # Type each character with human-like delays
     for i, char in enumerate(text):
-        # Base typing delay
-        delay = random.uniform(0.1, 0.3)
+        # Base typing delay - more realistic human typing speed
+        delay = random.uniform(0.08, 0.25)
         
         # Add longer pauses for special cases
         if i > 0:
@@ -47,10 +34,10 @@ def human_type(driver, element, text):
             if (prev_char in '.@' or 
                 (prev_char.isalpha() and char.isdigit()) or 
                 (prev_char.isdigit() and char.isalpha())):
-                delay += random.uniform(0.3, 0.5)
+                delay += random.uniform(0.2, 0.4)
         
-        # Occasionally simulate a typo (1% chance)
-        if random.random() < 0.01:
+        # Occasionally simulate a typo (0.5% chance - less frequent)
+        if random.random() < 0.005:
             # Type a wrong character
             wrong_char = random.choice('abcdefghijklmnopqrstuvwxyz')
             element.send_keys(wrong_char)
@@ -62,6 +49,10 @@ def human_type(driver, element, text):
         # Type the correct character
         element.send_keys(char)
         time.sleep(delay)
+        
+        # Occasionally pause longer (like human thinking)
+        if random.random() < 0.1:
+            time.sleep(random.uniform(0.3, 0.8))
 
 load_dotenv()
 
@@ -126,7 +117,7 @@ class ServiceM8APIExtractor:
                     self.driver = None
                 
                 options = Options()
-                options.add_argument("--headless=new")
+                #options.add_argument("--headless=new")
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
@@ -344,15 +335,20 @@ class ServiceM8APIExtractor:
                 self.driver.get(url)
                 
                 # Wait for page to load completely
-                WebDriverWait(self.driver, 15).until(
+                WebDriverWait(self.driver, 20).until(
                     lambda driver: driver.execute_script("return document.readyState") == "complete"
                 )
                 
+                # Additional wait for dynamic content to load
+                time.sleep(random.uniform(2, 4))
+                
                 # Additional check for ServiceM8 specific elements
                 if "servicem8.com" in url:
-                    WebDriverWait(self.driver, 10).until(
+                    WebDriverWait(self.driver, 15).until(
                         EC.presence_of_element_located((By.TAG_NAME, "body"))
                     )
+                    # Wait for any JavaScript to finish loading
+                    time.sleep(random.uniform(3, 6))
                 
                 # Verify page loaded correctly by checking title or URL
                 current_url = self.driver.current_url
@@ -387,7 +383,7 @@ class ServiceM8APIExtractor:
         return False
 
     def login(self):
-        """Login to ServiceM8 with retry mechanism"""
+        """Login to ServiceM8 with retry mechanism and human-like behavior"""
         for attempt in range(self.max_retries):
             try:
                 logger.info(f"Login attempt {attempt + 1}/{self.max_retries}")
@@ -401,41 +397,77 @@ class ServiceM8APIExtractor:
                     else:
                         return False
                 
-                wait = WebDriverWait(self.driver, 15)
+                # Wait longer for the login page to fully load
+                logger.info("Waiting for login page to fully load...")
+                time.sleep(random.uniform(3, 6))  # Wait 3-6 seconds for page to stabilize
+                
+                # Wait for login form elements to be present and visible
+                wait = WebDriverWait(self.driver, 20)
                 wait.until(EC.presence_of_element_located((By.ID, "user_email")))
+                wait.until(EC.element_to_be_clickable((By.ID, "user_email")))
+                
+                # Additional wait to ensure page is fully rendered
+                time.sleep(random.uniform(2, 4))
                 
                 # Find login form elements
                 email_field = self.driver.find_element(By.ID, "user_email")
                 password_field = self.driver.find_element(By.ID, "user_password")
                 submit_button = self.driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
 
+                # Human-like mouse movement to email field
+                action = ActionChains(self.driver)
+                # Move mouse in a natural path to the email field
+                action.move_to_element_with_offset(email_field, random.randint(-10, 10), random.randint(-5, 5)).perform()
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Click email field with slight delay
+                email_field.click()
+                time.sleep(random.uniform(0.3, 0.7))
+                
+                # Clear any existing text
+                email_field.clear()
+                time.sleep(random.uniform(0.2, 0.5))
+                
                 # Type email with human-like behavior
                 human_type(self.driver, email_field, self.email)
                 
                 # Natural pause between fields (like a human thinking/moving to next field)
-                time.sleep(random.uniform(0.8, 2.0))
+                time.sleep(random.uniform(1.5, 3.0))
+                
+                # Human-like mouse movement to password field
+                action.move_to_element_with_offset(password_field, random.randint(-10, 10), random.randint(-5, 5)).perform()
+                time.sleep(random.uniform(0.5, 1.0))
+                
+                # Click password field
+                password_field.click()
+                time.sleep(random.uniform(0.3, 0.7))
+                
+                # Clear any existing text
+                password_field.clear()
+                time.sleep(random.uniform(0.2, 0.5))
                 
                 # Type password with human-like behavior
                 human_type(self.driver, password_field, self.password)
                 
                 # Natural pause before clicking submit (like a human reviewing their input)
-                time.sleep(random.uniform(1.0, 2.0))
+                time.sleep(random.uniform(2.0, 4.0))
                 
-                # Move to and click submit button naturally
-                action = ActionChains(self.driver)
-                action.move_to_element(submit_button).perform()
-                time.sleep(random.uniform(0.3, 0.7))
+                # Move to submit button with natural mouse movement
+                action.move_to_element_with_offset(submit_button, random.randint(-15, 15), random.randint(-10, 10)).perform()
+                time.sleep(random.uniform(0.5, 1.0))
                 
                 # Sometimes move mouse slightly before clicking (more human-like)
-                if random.random() < 0.3:
-                    action.move_by_offset(random.randint(-5, 5), random.randint(-5, 5)).perform()
-                    time.sleep(random.uniform(0.1, 0.3))
+                if random.random() < 0.4:
+                    action.move_by_offset(random.randint(-8, 8), random.randint(-8, 8)).perform()
+                    time.sleep(random.uniform(0.2, 0.5))
                     action.move_to_element(submit_button).perform()
-                    time.sleep(random.uniform(0.1, 0.3))
+                    time.sleep(random.uniform(0.2, 0.5))
                 
+                # Click submit button
                 submit_button.click()
                 
-                time.sleep(5)
+                # Wait for login to process
+                time.sleep(random.uniform(5, 8))
                 
                 current_url = self.driver.current_url
                 if "login" not in current_url.lower() and "servicem8.com" in current_url:
@@ -495,22 +527,22 @@ class ServiceM8APIExtractor:
                     wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                     time.sleep(10)
                     
-                # Check if we're on dispatch page
-                current_url = self.driver.current_url
-                page_title = self.driver.title
-                
-                # Check for access denied
-                if "access denied" in page_title.lower() or "access denied" in self.driver.page_source.lower():
-                    logger.error(f"[ACCESS_DENIED] User does not have permission to access Dispatch Board")
-                    logger.error(f"[ACCESS_DENIED] Current URL: {current_url}")
-                    logger.error(f"[ACCESS_DENIED] Page Title: {page_title}")
-                    logger.error(f"[ACCESS_DENIED] This is a ServiceM8 user permission issue, not a technical problem")
-                    logger.error(f"[ACCESS_DENIED] Please check if the user account has 'Dispatch Board' permissions in ServiceM8")
-                    return False
-                
-                if "job_dispatch" in current_url or "dispatch" in current_url.lower():
-                    logger.info("[SUCCESS] Successfully navigated to Dispatch Board via direct URL")
-                    return True
+                    # Check if we're on dispatch page
+                    current_url = self.driver.current_url
+                    page_title = self.driver.title
+                    
+                    # Check for access denied
+                    if "access denied" in page_title.lower() or "access denied" in self.driver.page_source.lower():
+                        logger.error(f"[ACCESS_DENIED] User does not have permission to access Dispatch Board")
+                        logger.error(f"[ACCESS_DENIED] Current URL: {current_url}")
+                        logger.error(f"[ACCESS_DENIED] Page Title: {page_title}")
+                        logger.error(f"[ACCESS_DENIED] This is a ServiceM8 user permission issue, not a technical problem")
+                        logger.error(f"[ACCESS_DENIED] Please check if the user account has 'Dispatch Board' permissions in ServiceM8")
+                        return False
+                    
+                    if "job_dispatch" in current_url or "dispatch" in current_url.lower():
+                        logger.info("[SUCCESS] Successfully navigated to Dispatch Board via direct URL")
+                        return True
                         
                 except Exception as direct_error:
                     logger.warning(f"Direct URL navigation failed: {direct_error}")
