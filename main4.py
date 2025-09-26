@@ -261,11 +261,33 @@ class ServiceM8APIExtractor:
                 logger.info(f"Created temporary user data directory: {self.temp_user_data_dir}")
                 
                 options = Options()
-                # try with headless first
-                # options.add_argument("--headless=new")   # modern headless mode
-
-                # Add unique user data directory to prevent conflicts
-                options.add_argument(f"--user-data-dir={self.temp_user_data_dir}")
+                
+                # Server-specific options - try different approaches based on attempt
+                is_server = self.is_server_environment()
+                
+                if is_server:
+                    if attempt == 0:
+                        # First attempt: Try with headless mode (best for servers)
+                        logger.info("Server environment detected - attempting with headless mode")
+                        options.add_argument("--headless=new")
+                    elif attempt == 1:
+                        # Second attempt: Try without user-data-dir
+                        logger.info("Server environment - attempting without user-data-dir to avoid conflicts")
+                        # Don't add user-data-dir for this attempt
+                    else:
+                        # Third attempt: Try with user-data-dir but with additional server options
+                        logger.info("Server environment - attempting with user-data-dir and additional server options")
+                        options.add_argument(f"--user-data-dir={self.temp_user_data_dir}")
+                else:
+                    # Local environment - use user-data-dir from first attempt
+                    if attempt == 0:
+                        logger.info("Local environment detected - using user-data-dir")
+                        options.add_argument(f"--user-data-dir={self.temp_user_data_dir}")
+                    else:
+                        logger.info("Local environment - attempting without user-data-dir")
+                        # Don't add user-data-dir for retry attempts
+                
+                # Essential server options
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
@@ -284,6 +306,24 @@ class ServiceM8APIExtractor:
                 options.add_argument("--disable-background-timer-throttling")
                 options.add_argument("--disable-backgrounding-occluded-windows")
                 options.add_argument("--disable-renderer-backgrounding")
+                
+                # Server-specific additional options
+                options.add_argument("--disable-software-rasterizer")
+                options.add_argument("--disable-background-networking")
+                options.add_argument("--disable-default-apps")
+                options.add_argument("--disable-sync")
+                options.add_argument("--disable-translate")
+                options.add_argument("--hide-scrollbars")
+                options.add_argument("--metrics-recording-only")
+                options.add_argument("--mute-audio")
+                options.add_argument("--no-first-run")
+                options.add_argument("--safebrowsing-disable-auto-update")
+                options.add_argument("--disable-ipc-flooding-protection")
+                options.add_argument("--disable-hang-monitor")
+                options.add_argument("--disable-prompt-on-repost")
+                options.add_argument("--disable-domain-reliability")
+                options.add_argument("--disable-features=TranslateUI")
+                options.add_argument("--disable-component-extensions-with-background-pages")
                 
                 # Download preferences
                 prefs = {
@@ -330,6 +370,31 @@ class ServiceM8APIExtractor:
                     return False
         
         return False
+    
+    def is_server_environment(self):
+        """Detect if running in a server environment"""
+        try:
+            # Check for common server environment indicators
+            server_indicators = [
+                'SSH_CONNECTION' in os.environ,
+                'SSH_CLIENT' in os.environ,
+                'SSH_TTY' in os.environ,
+                'DISPLAY' not in os.environ,
+                os.path.exists('/.dockerenv'),  # Docker container
+                os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read(),
+                os.environ.get('CI') == 'true',  # CI environment
+                os.environ.get('GITHUB_ACTIONS') == 'true',  # GitHub Actions
+                os.environ.get('TRAVIS') == 'true',  # Travis CI
+                os.environ.get('JENKINS_URL') is not None,  # Jenkins
+            ]
+            
+            is_server = any(server_indicators)
+            logger.info(f"Server environment detected: {is_server}")
+            return is_server
+            
+        except Exception as e:
+            logger.warning(f"Error detecting server environment: {e}")
+            return False
     
     def download_file(self, url, filename=None):
         """Download a file using the configured Chrome browser"""
